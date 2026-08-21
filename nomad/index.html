@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dashboard Cotizaciones Sanaré & Nomad</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<div id="login-container" class="login-container">
+    <div class="login-card">
+      <img src="img/innvida-logo.png" alt="INNVIDA" class="login-logo" />
+      <h2 class="login-title">Acceso a Dashboard</h2>
+      <p class="login-subtitle">Ingresa con tu usuario y contraseña INNVIDA.</p>
+      <form id="login-form">
+        <div class="login-form-group">
+          <label for="username">Usuario</label>
+          <input type="text" id="username" autocomplete="username" required />
+        </div>
+        <div class="login-form-group">
+          <label for="password">Contraseña</label>
+          <input type="password" id="password" autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="btn primary" style="width:100%; margin-top:0.75rem;">Entrar</button>
+        <p id="login-error" class="login-error" style="display:none;">Usuario o contraseña incorrectos.</p>
+      </form>
+      <div class="login-footer">
+        <span>INNVIDA</span> · Acceso exclusivo para Víctor, Antonio, Guillermo y Mónica.
+      </div>
+    </div>
+  </div>
+
+  <div id="appContainer" style="display:none;">
+  <header class="top-bar">
+    <div class="top-bar-title">
+      <h1>Dashboard de Cotizaciones — NOMAD</h1>
+      <p>Nomad en tiempo real (Firebase) · Solo cotizaciones Nomad</p>
+    </div>
+    <div class="top-bar-actions">
+      <button id="btnExportCsvResumen" class="btn primary">CSV resumen</button>
+      <button id="btnExportCsvDetallado" class="btn secondary">CSV detallado</button>
+    </div>
+  </header>
+
+  <!-- NAVEGACIÓN PESTAÑAS -->
+  <nav class="tabs-nav">
+    <button class="tab-btn active" data-tab="tab-dashboard" id="tabBtnDashboard">
+      📊 Dashboard Principal
+    </button>
+    <button class="tab-btn" data-tab="tab-romarico" id="tabBtnRomarico">
+      📋 Seguimiento Romarico
+      <span class="tab-badge" id="romaricoSinMatchBadge" style="display:none;">0</span>
+    </button>
+  </nav>
+
+  <!-- ===================== PESTAÑA 1: DASHBOARD PRINCIPAL ===================== -->
+  <div id="tab-dashboard" class="tab-content active">
+  <main class="layout">
+    <section class="panel panel-filtros">
+      <h2>Filtros</h2>
+
+      <div class="filtros-grid">
+
+        <div class="campo">
+          <label>Rango de fechas (por fecha de emisión)</label>
+          <div class="campo-inline">
+            <input type="date" id="filtroFechaInicio">
+            <span>a</span>
+            <input type="date" id="filtroFechaFin">
+          </div>
+        </div>
+
+        <div class="campo">
+          <label>Estatus 1</label>
+          <select id="filtroStatus1" multiple size="4"></select>
+          <small>Ctrl + clic para selección múltiple.</small>
+        </div>
+
+        <div class="campo">
+          <label>Estatus 2</label>
+          <select id="filtroStatus2" multiple size="4"></select>
+          <small>Ctrl + clic para selección múltiple.</small>
+        </div>
+
+        <div class="campo">
+          <label>Buscar (folio, paciente, médico, KAM)</label>
+          <input type="text" id="filtroTexto" placeholder="Buscar...">
+        </div>
+
+        <div class="campo campo-botones">
+          <button id="btnLimpiarFiltros" class="btn ghost">Limpiar filtros</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel panel-resumen">
+      <h2>Resumen NOMAD</h2>
+      <div class="cards-grid cards-grid-nomad">
+        <article class="card card-nomad" style="display: none;">
+          <h3>Total NOMAD</h3>
+          <p class="card-total" id="totalNomad">$0</p>
+          <p class="card-subtitle"><span id="totalNomadCount">0</span> cotizaciones</p>
+        </article>
+
+        <article class="card card-cerradas">
+          <h3>Cerradas / Aceptadas</h3>
+          <p class="card-total" id="totalGlobal">$0</p>
+          <p class="card-subtitle"><span id="totalGlobalCount">0</span> cotizaciones</p>
+        </article>
+
+        <article class="card card-ticket">
+          <h3>Ticket promedio</h3>
+          <p class="card-total" id="ticketPromedio">$0</p>
+          <p class="card-subtitle">Por cotización</p>
+        </article>
+
+        <article class="card card-perdidas">
+          <h3>Perdidas / Canceladas</h3>
+          <p class="card-total" id="totalSanare">0</p>
+          <p class="card-subtitle"><span id="totalSanareCount">0</span> cotizaciones</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- Podio KAM -->
+    <section class="panel panel-podio">
+      <h2>🏆 Podio KAM — Mes Actual</h2>
+      <div class="podio-grid">
+        <div class="podio-col">
+          <h3 class="podio-titulo cerradas">🥇 Top Cerradas / Aceptadas</h3>
+          <ol class="podio-lista" id="podioCerradas"></ol>
+        </div>
+        <div class="podio-col">
+          <h3 class="podio-titulo sinSeguimiento">⚠️ Top Sin Seguimiento</h3>
+          <ol class="podio-lista" id="podioSinSeguimiento"></ol>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel panel-tabla">
+      <div class="panel-header">
+        <h2>Detalle de cotizaciones</h2>
+        <span id="contadorFilas" class="badge">0 filas</span>
+      </div>
+
+      <div class="tabla-contenedor">
+        <table class="tabla" id="tablaCotizaciones">
+          <thead>
+            <tr>
+              <th>Folio</th>
+              <th>Fecha emisión</th>
+              <th>Fecha cierre</th>
+              <th>Paciente</th>
+              <th>Médico</th>
+              <th>KAM</th>
+              <th>Aseguradora</th>
+              <th>Total</th>
+              <th>Estatus 1</th>
+              <th>Estatus 2</th>
+              <th>Motivo / comentario</th>
+            </tr>
+          </thead>
+          <tbody id="tablaCotizacionesBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel panel-graficos">
+      <h2>📊 Desempeño KAM — NOMAD</h2>
+      <div class="charts-grid charts-grid-kam">
+        <div class="chart-card chart-card-wide">
+          <h3>Total cotizado por KAM ($)</h3>
+          <canvas id="chartKams"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Cotizaciones por KAM (conteo)</h3>
+          <canvas id="chartKamsCount"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Distribución por Estatus 1</h3>
+          <canvas id="chartStatus1"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Estatus 1 por KAM</h3>
+          <canvas id="chartKamStatus"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Pruebas solicitadas (NOMAD)</h3>
+          <canvas id="chartPruebas"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Tendencia mensual</h3>
+          <canvas id="chartMeses"></canvas>
+        </div>
+      </div>
+    </section>
+  </main>
+  </div>
+
+  <!-- ===================== PESTAÑA 2: SEGUIMIENTO ROMARICO ===================== -->
+  <div id="tab-romarico" class="tab-content">
+    <main class="layout-romarico">
+
+      <!-- Encabezado Romarico -->
+      <section class="panel panel-romarico-header">
+        <div class="romarico-title-row">
+          <div>
+            <h2>📋 Seguimiento Romarico Puebla — NOMAD</h2>
+            <p class="romarico-subtitle">
+              Datos sincronizados desde Google Sheets · Última actualización:
+              <strong id="romaricoLastUpdate">--</strong>
+            </p>
+          </div>
+          <div class="romarico-actions">
+            <button id="btnRefreshRomarico" class="btn primary">🔄 Actualizar Sheet</button>
+            <button id="btnExportRomarico" class="btn secondary">⬇ CSV</button>
+          </div>
+        </div>
+
+        <!-- Alerta de Semana -->
+        <div id="romaricoAlertSemana" class="romarico-alert-semana" style="display:none;">
+          <strong>📅 Resumen Semanal:</strong> <span id="romaricoTextoSemana">Calculando...</span>
+        </div>
+
+
+        <!-- KPIs Romarico -->
+        <div class="romarico-kpis">
+          <div class="romarico-kpi">
+            <span class="kpi-num" id="romaricoTotal">0</span>
+            <span class="kpi-label">Total registros</span>
+          </div>
+          <div class="romarico-kpi kpi-match">
+            <span class="kpi-num" id="romaricoConMatch">0</span>
+            <span class="kpi-label">✅ Con cotización</span>
+          </div>
+          <div class="romarico-kpi kpi-sinmatch">
+            <span class="kpi-num" id="romaricoSinMatch">0</span>
+            <span class="kpi-label">⚠️ Sin cotización</span>
+          </div>
+          <div class="romarico-kpi kpi-completo">
+            <span class="kpi-num" id="romaricoCompleto">0</span>
+            <span class="kpi-label">✔ Completo/Enviado</span>
+          </div>
+          <div class="romarico-kpi kpi-monto">
+            <span class="kpi-num" id="romaricoMontoTotal">$0</span>
+            <span class="kpi-label">💰 Monto Total (Sheet)</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Filtros Romarico -->
+      <section class="panel panel-romarico-filtros">
+        <div class="romarico-filtros-row">
+          <div class="campo">
+            <label>Buscar paciente / prueba</label>
+            <input type="text" id="filtroRomaricoTexto" placeholder="Buscar...">
+          </div>
+          <div class="campo">
+            <label>Rango de fechas (Solicitud)</label>
+            <div class="campo-inline">
+              <input type="date" id="filtroRomaricoFechaInicio">
+              <span>a</span>
+              <input type="date" id="filtroRomaricoFechaFin">
+            </div>
+          </div>
+          <div class="campo">
+            <label>Forma de pago</label>
+            <select id="filtroRomaricoFormaPago">
+              <option value="">Todas</option>
+            </select>
+          </div>
+          <div class="campo">
+            <label>Responsable</label>
+            <select id="filtroRomaricoResponsable">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="campo">
+            <label>Match con Firebase</label>
+            <select id="filtroRomaricoMatch">
+              <option value="">Todos</option>
+              <option value="con">✅ Con cotización</option>
+              <option value="sin">⚠️ Sin cotización</option>
+            </select>
+          </div>
+          <div class="campo campo-botones">
+            <button id="btnLimpiarFiltrosRomarico" class="btn ghost">Limpiar</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tabla Romarico -->
+      <section class="panel panel-tabla-romarico">
+        <div class="panel-header">
+          <h2>Detalle del seguimiento</h2>
+          <span id="contadorRomarico" class="badge">0 filas</span>
+        </div>
+
+        <div id="romaricoLoadingState" class="romarico-loading">
+          <div class="loading-spinner"></div>
+          <p>Cargando datos del Sheet...</p>
+        </div>
+
+        <div id="romaricoErrorState" class="romarico-error" style="display:none;">
+          <p>⚠️ No se pudieron cargar los datos. Verifica que el Sheet sea público.</p>
+          <button id="btnRetryRomarico" class="btn ghost">Reintentar</button>
+        </div>
+
+        <div class="tabla-contenedor" id="romaricoTableContainer" style="display:none;">
+          <table class="tabla tabla-romarico" id="tablaRomarico">
+            <thead>
+              <tr>
+                <th>Match</th>
+                <th>Fecha solicitud</th>
+                <th>Nombre paciente</th>
+                <th>Prueba</th>
+                <th>Costo c/IVA</th>
+                <th>Forma de pago</th>
+                <th>Seguimiento (Romarico)</th>
+                <th>Notas / Proceso</th>
+                <th>Apoyo COI</th>
+                <th>Responsable</th>
+                <th>— Firebase NOMAD —</th>
+                <th>Folio</th>
+                <th>KAM</th>
+                <th>Status 1</th>
+                <th>Status 2</th>
+                <th>Comentario</th>
+              </tr>
+            </thead>
+            <tbody id="tablaRomaricoBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Gráficos Romarico -->
+      <section class="panel panel-graficos-romarico">
+        <h2>📊 Analíticas Romarico</h2>
+        <div class="charts-grid charts-grid-romarico">
+          <div class="chart-card">
+            <h3>Distribución por Responsable</h3>
+            <canvas id="chartRomaricoResponsable"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Seguimiento (Romarico)</h3>
+            <canvas id="chartRomaricoSeguimiento"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Pruebas solicitadas (Romarico)</h3>
+            <canvas id="chartRomaricoPruebas"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Tendencia Mensual (Romarico)</h3>
+            <canvas id="chartRomaricoMeses"></canvas>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <footer class="footer">
+    <small>Dashboard en tiempo real con Firebase. Sheet de Romarico se actualiza automáticamente cada 5 min.</small>
+  </footer>
+  </div>
+
+<script>
+    (function() {
+      const USERS = [
+        { username: "Victor",    password: "innvida2026" },
+        { username: "Antonio",   password: "innvida2026" },
+        { username: "Guillermo", password: "innvida2026" },
+        { username: "Rene",    password: "innvida2026" }
+      ];
+
+      function isValidCredentials(user, pass) {
+        if (!user || !pass) return false;
+        const u = user.trim().toLowerCase();
+        return USERS.some(function(item) {
+          return item.username.toLowerCase() === u && item.password === pass;
+        });
+      }
+
+      function showDashboard() {
+        var login = document.getElementById("login-container");
+        var app   = document.getElementById("appContainer");
+        if (login) login.style.display = "none";
+        if (app)   app.style.display   = "";
+      }
+
+      document.addEventListener("DOMContentLoaded", function() {
+        var saved = window.localStorage ? localStorage.getItem("innvidaDashboardUser") : null;
+        if (saved) {
+          showDashboard();
+          return;
+        }
+
+        var form  = document.getElementById("login-form");
+        if (!form) return;
+
+        form.addEventListener("submit", function(e) {
+          e.preventDefault();
+          var userInput = document.getElementById("username");
+          var passInput = document.getElementById("password");
+          var errorElem = document.getElementById("login-error");
+
+          var user = userInput ? userInput.value : "";
+          var pass = passInput ? passInput.value : "";
+
+          if (isValidCredentials(user, pass)) {
+            if (window.localStorage) {
+              localStorage.setItem("innvidaDashboardUser", user);
+            }
+            showDashboard();
+          } else {
+            if (errorElem) errorElem.style.display = "block";
+          }
+        });
+      });
+    })();
+  </script>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

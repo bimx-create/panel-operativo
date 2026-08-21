@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Panel Operativo — INNVIDA</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/crm-pro.css?v=6">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { background: var(--bg1, #0a0f1e); color: var(--text1, #f1f5f9); font-family: 'Inter', sans-serif; margin: 0; padding: 0; }
+
+    /* HEADER */
+    .rep-header {
+      background: var(--bg2, #0d1526); border-bottom: 1px solid rgba(255,255,255,0.08);
+      padding: 14px 28px; display: flex; align-items: center; gap: 12px;
+    }
+    .rep-header h1 { margin: 0; font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+    .rep-header h1 span { color: #0A6EBD; }
+
+    /* TABS */
+    .main-tabs { display: flex; background: var(--bg2, #0d1526); border-bottom: 2px solid rgba(255,255,255,0.07); padding: 0 28px; }
+    .main-tab-btn {
+      padding: 13px 22px; font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 600;
+      background: none; border: none; border-bottom: 3px solid transparent; color: #94a3b8;
+      cursor: pointer; transition: all 0.2s; margin-bottom: -2px; display: flex; align-items: center; gap: 8px;
+    }
+    .main-tab-btn:hover { color: #f1f5f9; }
+    .main-tab-btn.active { color: #38bdf8; border-bottom-color: #38bdf8; }
+
+    /* TAB PANELS */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* SAI IFRAME */
+    #saiFrame { width: 100%; border: none; height: calc(100vh - 90px); background: #f8f9fa; display: block; }
+
+    /* REPORT CONTROLS */
+    .rep-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 14px 28px; background: var(--bg2, #0d1526); border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .rep-controls select, .rep-controls button { padding: 7px 14px; border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif; }
+    .rep-controls select { background: var(--bg2, #0d1526); border: 1px solid rgba(255,255,255,0.08); color: #f1f5f9; cursor: pointer; }
+    .rep-controls button { background: #0A6EBD; border: none; color: #fff; cursor: pointer; font-weight: 600; transition: opacity 0.2s; }
+    .rep-controls button:hover { opacity: 0.85; }
+
+    .rep-body { padding: 28px; max-width: 1400px; margin: 0 auto; }
+    .status-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    .status-chip { padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; background: rgba(10,110,189,0.15); color: #38bdf8; border: 1px solid rgba(10,110,189,0.3); }
+    .status-chip.ok { background: rgba(34,197,94,0.15); color: #22c55e; border-color: rgba(34,197,94,0.3); }
+
+    .dashboard-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 24px; margin-bottom: 32px; }
+    @media(max-width: 900px) { .dashboard-grid { grid-template-columns: 1fr; } }
+
+    .panel { background: var(--bg2, #0d1526); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 20px; }
+    .panel-title { font-size: 15px; font-weight: 700; color: #38bdf8; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+
+    .podium-list { display: flex; flex-direction: column; gap: 12px; }
+    .podium-item { display: flex; align-items: center; gap: 12px; background: rgba(0,0,0,0.2); padding: 10px 14px; border-radius: 8px; }
+    .podium-rank { font-size: 16px; font-weight: 800; width: 24px; text-align: center; }
+    .podium-rank.rank-1 { color: #fbbf24; }
+    .podium-rank.rank-2 { color: #94a3b8; }
+    .podium-rank.rank-3 { color: #b45309; }
+    .podium-info { flex: 1; }
+    .podium-name { font-weight: 600; font-size: 14px; }
+    .podium-val { font-weight: 700; font-size: 16px; color: #22c55e; }
+
+    .kam-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-bottom: 32px; }
+    .kam-card { background: var(--bg2, #0d1526); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 16px 18px; }
+    .kam-card-name { font-size: 14px; font-weight: 700; color: #f1f5f9; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .kam-card-name .dot { width: 8px; height: 8px; border-radius: 50%; background: #0A6EBD; flex-shrink: 0; }
+    .kam-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+    .kam-metric { background: rgba(0,0,0,0.2); border-radius: 8px; padding: 8px 10px; text-align: center; cursor: pointer; transition: background 0.2s; }
+    .kam-metric:hover { background: rgba(255,255,255,0.05); }
+    .kam-metric-val { font-size: 22px; font-weight: 700; line-height: 1; text-decoration: underline; text-decoration-color: rgba(255,255,255,0.2); }
+    .kam-metric-val.blue { color: #38bdf8; text-decoration-color: rgba(56,189,248,0.3); }
+    .kam-metric-val.green { color: #22c55e; text-decoration-color: rgba(34,197,94,0.3); }
+    .kam-metric-val.amber { color: #f59e0b; text-decoration-color: rgba(245,158,11,0.3); }
+    .kam-metric-val.purple { color: #a78bfa; text-decoration-color: rgba(167,139,250,0.3); }
+    .kam-metric-lbl { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; margin-top: 3px; }
+
+    .modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: 999; display: none; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+    .modal-content { background: var(--bg2, #0d1526); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; width: 90%; max-width: 800px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    .modal-header { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; }
+    .modal-header h2 { margin: 0; font-size: 18px; color: #fff; }
+    .modal-body { padding: 20px; overflow-y: auto; }
+
+    table.detail-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.detail-table th { background: rgba(0,0,0,0.2); padding: 10px; text-align: left; color: #94a3b8; font-weight: 600; text-transform: uppercase; font-size: 11px; }
+    table.detail-table td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+
+    .badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .badge-blue { background: rgba(56,189,248,0.15); color: #38bdf8; }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="rep-header">
+    <h1>
+      <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+      Panel Operativo <span>INNVIDA</span>
+    </h1>
+  </div>
+
+  <!-- TAB BAR -->
+  <nav class="main-tabs">
+    <button class="main-tab-btn active" onclick="switchTab('resumen', this)">
+      ⭐ Resumen Directivo
+    </button>
+    <button class="main-tab-btn" onclick="switchTab('sai', this)">
+      🏥 Concentrado de Facturación SAI
+    </button>
+    <button class="main-tab-btn" onclick="switchTab('nomad', this)">
+      📑 Cotizaciones Nomad
+    </button>
+    <button class="main-tab-btn" onclick="switchTab('kams', this)">
+      📊 Análisis Semanal KAMs
+    </button>
+  </nav>
+
+  <!-- TAB: RESUMEN -->
+  <div id="tab-resumen" class="tab-panel active">
+    <div class="rep-controls">
+      <span style="color:#94a3b8; font-size:13px; font-weight:600;">⭐ Resumen Directivo —</span>
+      <select id="filtroMesResumen" onchange="window.forceRefresh && forceRefresh()"></select>
+      <select id="filtroSemanaResumen" onchange="window.forceRefresh && forceRefresh()"></select>
+    </div>
+    <div class="rep-body" id="resumenDirectivoContent">
+      <div style="text-align:center; padding:60px; color:#94a3b8;">
+        <div style="font-size:32px; margin-bottom:12px;">⭐</div>
+        <div style="font-size:18px; font-weight:600; color:#f1f5f9; margin-bottom:8px;">Resumen Directivo</div>
+        <div style="font-size:13px;">Cargando datos de las 4 bases de datos…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: SAI -->
+  <div id="tab-sai" class="tab-panel">
+    <iframe id="saiFrame" src="sai/index.html" title="Concentrado de Facturación SAI"></iframe>
+  </div>
+
+  <!-- TAB: NOMAD -->
+  <div id="tab-nomad" class="tab-panel">
+    <iframe id="nomadFrame" src="nomad/index.html" title="Cotizaciones Nomad" style="width: 100%; border: none; height: calc(100vh - 90px); background: #f8f9fa; display: block;"></iframe>
+  </div>
+
+  <!-- TAB: KAMs -->
+  <div id="tab-kams" class="tab-panel">
+    <div class="rep-controls">
+      <select id="filtroMes"><option value="all">Todos los Meses</option></select>
+      <select id="filtroSemana"><option value="all">Seleccionar Semana...</option></select>
+      <button onclick="forceRefresh()">↻ Refrescar</button>
+    </div>
+
+    <div class="rep-body">
+      <div class="status-bar" id="statusBar">
+        <span class="status-chip loading">Cargando base de datos...</span>
+      </div>
+
+      <div class="dashboard-grid">
+        <div style="display:flex; flex-direction:column; gap:20px;">
+          <div class="panel">
+            <div class="panel-title">🏆 Podio Semanal: Médicos</div>
+            <div id="podiumMedicos" class="podium-list"><em style="color:#94a3b8;font-size:13px;">Sin datos</em></div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">🏆 Podio Semanal: Cotizaciones</div>
+            <div id="podiumCotizaciones" class="podium-list"><em style="color:#94a3b8;font-size:13px;">Sin datos</em></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">📊 Rendimiento Global KAMs</div>
+          <canvas id="chartKAMs" style="width:100%; height:300px; max-height:300px;"></canvas>
+        </div>
+      </div>
+
+      <h2 style="font-size:18px; margin-bottom:16px;">Desglose por KAM <span style="font-weight:400; font-size:13px; color:#94a3b8;">(Clic en los números para ver el detalle)</span></h2>
+      <div id="repContent"><div style="text-align:center; padding:40px; color:#94a3b8;">Selecciona una semana arriba para ver el desglose.</div></div>
+    </div>
+  </div>
+
+  <!-- MODAL -->
+  <div id="detailModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modalTitle">Detalle</h2>
+        <button class="btn btn-ghost" onclick="document.getElementById('detailModal').style.display='none'">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="assets/js/app.js?v=4"></script>
+  <script src="cotizaciones.js?v=57"></script>
+  <script>
+    function switchTab(tab, btn) {
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.main-tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + tab).classList.add('active');
+      btn.classList.add('active');
+    }
+
+    document.getElementById('detailModal').addEventListener('click', function(e) {
+      if (e.target === this) this.style.display = 'none';
+    });
+  </script>
+</body>
+</html>
