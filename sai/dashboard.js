@@ -183,22 +183,15 @@ function renderExecutiveDashboard(rows) {
   // ---- Retención: pacientes nuevos vs recurrentes ----
   const nuevos = rowsConMonto.filter(r => esPacienteNuevo(r.primeraVez));
   const recurrentes = rowsConMonto.filter(r => !esPacienteNuevo(r.primeraVez));
-  const pctRecurrentes = rowsConMonto.length ? (recurrentes.length / rowsConMonto.length) * 100 : 0;
-  if ($("execRetencionPct")) {
-    if (rowsConMonto.length) {
-      const mayorEsRecurrente = recurrentes.length >= nuevos.length;
-      const pctMayor = mayorEsRecurrente ? pctRecurrentes : (100 - pctRecurrentes);
-      const pctMenor = mayorEsRecurrente ? (100 - pctRecurrentes) : pctRecurrentes;
-      const etiquetaMayor = mayorEsRecurrente ? "recurrentes" : "de primera vez";
-      const etiquetaMenor = mayorEsRecurrente ? "de primera vez" : "recurrentes";
-
-      $("execRetencionPct").textContent = `${pctMayor.toFixed(0)}% ${etiquetaMayor}`;
-      $("execRetencionDetalle").textContent = `${pctMenor.toFixed(0)}% ${etiquetaMenor}`;
-    } else {
-      $("execRetencionPct").textContent = "—";
-      $("execRetencionDetalle").textContent = "Sin datos suficientes";
-    }
-  }
+  
+  const montoNuevos = nuevos.reduce((a, r) => a + (Number(r.montoServicio) || 0), 0);
+  const montoRecurrentes = recurrentes.reduce((a, r) => a + (Number(r.montoServicio) || 0), 0);
+  
+  if ($("execNuevosVol")) $("execNuevosVol").textContent = `${nuevos.length} pac`;
+  if ($("execNuevosMonto")) $("execNuevosMonto").textContent = formatearMoneda(montoNuevos);
+  
+  if ($("execRecurrentesVol")) $("execRecurrentesVol").textContent = `${recurrentes.length} pac`;
+  if ($("execRecurrentesMonto")) $("execRecurrentesMonto").textContent = formatearMoneda(montoRecurrentes);
 
   // ---- Ticket promedio por sede (siempre todas las sedes, para comparar) ----
   const conteoPorSede = new Map();
