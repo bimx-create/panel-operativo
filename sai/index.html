@@ -87,10 +87,21 @@
         <strong id="execOrigenPagoPct">—</strong>
         <small id="execOrigenPagoDetalle">Sin datos suficientes</small>
       </article>
-      <article class="exec-kpi">
-        <span>Pacientes recurrentes</span>
-        <strong id="execRetencionPct">—</strong>
-        <small id="execRetencionDetalle">Sin datos suficientes</small>
+      <article class="exec-kpi" style="display: flex; flex-direction: column; justify-content: center; gap: 8px;">
+        <span style="margin-bottom: 4px;">Nuevos vs Recurrentes</span>
+        <div style="display: flex; justify-content: space-between; font-size: 13px;">
+          <div style="display: flex; flex-direction: column;">
+            <strong style="font-size: 16px; color: #fff;" id="execNuevosVol">0</strong>
+            <small style="color: #94a3b8;">Nuevos (1ra vez)</small>
+            <strong style="font-size: 14px; color: #38bdf8; margin-top: 2px;" id="execNuevosMonto">$0</strong>
+          </div>
+          <div style="width: 1px; background: rgba(255,255,255,0.1); margin: 0 10px;"></div>
+          <div style="display: flex; flex-direction: column; text-align: right;">
+            <strong style="font-size: 16px; color: #fff;" id="execRecurrentesVol">0</strong>
+            <small style="color: #94a3b8;">Recurrentes</small>
+            <strong style="font-size: 14px; color: #22c55e; margin-top: 2px;" id="execRecurrentesMonto">$0</strong>
+          </div>
+        </div>
       </article>
       <article class="exec-kpi">
         <span>Sede con mejor ticket promedio</span>
