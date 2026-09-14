@@ -10,13 +10,17 @@
     'ALAIN': 'DR. ALAIN RAMÍREZ',
     'ALAIN RAMIREZ': 'DR. ALAIN RAMÍREZ',
     'DR ALAIN': 'DR. ALAIN RAMÍREZ',
-    'DR. ALAIN': 'DR. ALAIN RAMÍREZ'
+    'DR. ALAIN': 'DR. ALAIN RAMÍREZ',
+    'LIZETE': 'LIZETE GUADALUPE',
+    'LIZETE GUADALUPE': 'LIZETE GUADALUPE',
+    'LIZETH': 'LIZETE GUADALUPE',
+    'LIZETH GUADALUPE': 'LIZETE GUADALUPE'
   };
 
   // Solo estos KAMs deben aparecer en el reporte — lista exacta
   const ALLOWED_KAMS = new Set([
-    'ANAYELY TAPIA', 'BERENICE ORDAZ', 'CLAUDIA',
-    'DAVID SANTIAGO', 'DAYANA', 'DR. ALAIN RAMÍREZ', 'OSCAR RANGEL'
+    'ANAYELY TAPIA', 'CLAUDIA', 'DAVID SANTIAGO',
+    'DR. ALAIN RAMÍREZ', 'LIZETE GUADALUPE', 'OSCAR RANGEL'
   ]);
 
   const KNOWN_KAMS = [...ALLOWED_KAMS]; // para inicializar semanas
