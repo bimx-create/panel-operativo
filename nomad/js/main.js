@@ -388,13 +388,33 @@ function actualizarTotales(filas) {
   if(typeof totalSanareElem !== 'undefined' && totalSanareElem) totalSanareElem.textContent = perdidas.length;
   if(typeof totalSanareCountElem !== 'undefined' && totalSanareCountElem) totalSanareCountElem.textContent = perdidas.length;
 
+  // ── NOMAD_UPDATE para el panel operativo ──
+  // Contamos cerradas/aceptadas usando fechaCierre (no fechaEmision) sobre TODAS las filas.
+  // Así, editar fechaCierre de una cotización de cualquier mes la contará en el mes correcto.
   try {
     if (window.parent && window.parent !== window) {
+      const ahora = new Date();
+      const mesActualYYYY = ahora.getFullYear();
+      const mesActualMM   = ahora.getMonth(); // 0-based
+
+      // Cerradas del mes en curso según fechaCierre (sobre allRows completo)
+      const cerradasPorCierre = allRows.filter(r => {
+        if ((r.status1 || "").toLowerCase() !== "cerrada / aceptada") return false;
+        if (!r.fechaCierre) return false;
+        const partes = r.fechaCierre.split("-");
+        if (partes.length < 2) return false;
+        const anio = parseInt(partes[0], 10);
+        const mes  = parseInt(partes[1], 10) - 1; // 0-based
+        return anio === mesActualYYYY && mes === mesActualMM;
+      });
+
+      const montoPorCierre = cerradasPorCierre.reduce((acc, r) => acc + (r.total || 0), 0);
+
       window.parent.postMessage({
         type: 'NOMAD_UPDATE',
         payload: {
-          cerradasMonto: totalCerradas,
-          cerradasCount: cerradas.length
+          cerradasMonto: montoPorCierre,
+          cerradasCount: cerradasPorCierre.length
         }
       }, '*');
     }
