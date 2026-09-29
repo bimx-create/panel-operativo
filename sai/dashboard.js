@@ -106,6 +106,8 @@ function renderExecutiveDashboard(rows) {
   if (sedesOrdenadas.length) {
     $("execSedeLider").textContent = sedesOrdenadas[0][0];
     $("execSedeLiderMonto").textContent = formatearMoneda(sedesOrdenadas[0][1]);
+  calcularUtilidadGlobal(rowsConMontoTodas);
+
   } else {
     $("execSedeLider").textContent = "—";
     $("execSedeLiderMonto").textContent = "$0";
@@ -542,3 +544,232 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 window.renderExecutiveDashboard = renderExecutiveDashboard;
+
+
+// ============================================================
+// UTILIDAD POR SEDE - cruza paciente SAI con cotizaciones INNVIDA
+// ============================================================
+let _costosCache = null;
+
+async function calcularUtilidadGlobal(rowsConMontoTodas) {
+  try {
+    // 1. Cargar catalogo de costos
+    if (!_costosCache) {
+      if (window.COSTOS_DATA) {
+        _costosCache = window.COSTOS_DATA;
+      } else {
+        const resp = await fetch('../assets/costos.json');
+        if (!resp.ok) throw new Error('No se pudo cargar costos.json');
+        _costosCache = await resp.json();
+      }
+    }
+
+    const medsSheet  = _costosCache['CATALOGÓ MAESTROMEDICAMENTOS'] || [];
+    const servsSheet = _costosCache['SERVICIOS DE INFUSION Y ESTUDIO'] || [];
+    const esqSheet   = _costosCache['ESQUEMAS Y PRODUCTIVIDAD'] || [];
+
+    // Solo filas con costo numerico real
+    const medsFiltradas  = medsSheet.filter(function(m) { return typeof m['__EMPTY_6'] === 'number'; });
+    const servsFiltradas = servsSheet.filter(function(s) { return typeof s['__EMPTY_2'] === 'number'; });
+    const esqFiltradas   = esqSheet.filter(function(e) {
+      const k = Object.keys(e)[0];
+      const v = e[k];
+      return typeof v === 'string' && v.length > 1 &&
+        !['ESQUEMA','RESUMEN','PRECIO','PRODUCTI','FRECUENCI','TIPO','NEOPLASIA'].some(function(w){ return v.toUpperCase().includes(w); });
+    });
+
+    // Normaliza texto: sin acentos, minusculas, sin espacios extra
+    function norm(s) {
+      return String(s || '').toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ').trim();
+    }
+
+    // Busca el costo unitario de un medicamento/servicio/esquema en el catalogo
+    function buscarCostoItem(nombre) {
+      var n = norm(nombre);
+      if (!n || n.length < 3) return 0;
+
+      // 1. Medicamentos: descripcion o nombre comercial
+      for (var i = 0; i < medsFiltradas.length; i++) {
+        var m = medsFiltradas[i];
+        var desc = norm(m['__EMPTY_1'] || '');
+        var com  = norm(m['__EMPTY_2'] || '');
+        if ((desc && desc.length > 2 && (desc.includes(n) || n.includes(desc))) ||
+            (com  && com.length  > 2 && (com.includes(n)  || n.includes(com)))) {
+          return parseFloat(m['__EMPTY_6']) || 0;
+        }
+      }
+
+      // 2. Servicios de infusion
+      for (var j = 0; j < servsFiltradas.length; j++) {
+        var s = servsFiltradas[j];
+        var sdesc = norm(s['__EMPTY_1'] || '');
+        if (sdesc && sdesc.length > 2 && (sdesc.includes(n) || n.includes(sdesc))) {
+          return parseFloat(s['__EMPTY_2']) || 0;
+        }
+      }
+
+      // 3. Esquemas oncologicos
+      for (var k2 = 0; k2 < esqFiltradas.length; k2++) {
+        var e = esqFiltradas[k2];
+        var esqKey = Object.keys(e)[0];
+        var d = norm(e[esqKey] || '');
+        if (d && d.length > 1 && (d === n || n === d || d.includes(n) || n.includes(d))) {
+          return parseFloat(e['__EMPTY_2']) || 0;
+        }
+      }
+
+      return 0;
+    }
+
+    // 2. Obtener cotizaciones del panel padre (enviadas via postMessage)
+    var todasCotizaciones = window.cotizacionesDesdePadre || [];
+
+
+    // Mapa de nombre-normalizado -> lista de cotizaciones para busqueda rapida
+    var cotizacionesPorNombre = {};
+    todasCotizaciones.forEach(function(c) {
+      var p = norm(c.paciente || c.PACIENTE || c.nombrePaciente || '');
+      if (!p) return;
+      if (!cotizacionesPorNombre[p]) cotizacionesPorNombre[p] = [];
+      cotizacionesPorNombre[p].push(c);
+    });
+
+    var matchCount = 0;
+    var noMatchCount = 0;
+    var utilidadTotal = 0;
+    var utilidadPorSede = {};
+
+    // 3. Para cada registro del SAI, buscar su cotizacion y calcular utilidad
+    rowsConMontoTodas.forEach(function(row) {
+      var nomPac = norm(row.paciente);
+      if (!nomPac) return;
+
+      var montoServicio = parseFloat(row.montoServicio) || 0;
+      if (!montoServicio) return;
+
+      // Busqueda exacta primero
+      var matches = cotizacionesPorNombre[nomPac] || [];
+
+      // Si no hay match exacto, intentar busqueda parcial (nombre incompleto)
+      if (!matches.length) {
+        var parts = nomPac.split(' ').filter(function(p) { return p.length > 2; });
+        if (parts.length >= 2) {
+          var keys = Object.keys(cotizacionesPorNombre);
+          for (var ki = 0; ki < keys.length; ki++) {
+            var key = keys[ki];
+            var matched = parts.every(function(p) { return key.includes(p); }) ||
+                          key.split(' ').filter(function(p){ return p.length > 2; }).every(function(p) { return nomPac.includes(p); });
+            if (matched) {
+              matches = cotizacionesPorNombre[key];
+              break;
+            }
+          }
+        }
+      }
+
+      if (!matches.length) {
+        noMatchCount++;
+        return;
+      }
+      matchCount++;
+
+      // Preferir la cotizacion con items detallados (cotizador 3.0)
+      var quote = null;
+      for (var qi = 0; qi < matches.length; qi++) {
+        var q = matches[qi];
+        if (q.state && Array.isArray(q.state.items) && q.state.items.length > 0) { quote = q; break; }
+      }
+      if (!quote) {
+        for (var qi2 = 0; qi2 < matches.length; qi2++) {
+          var q2 = matches[qi2];
+          if (Array.isArray(q2.items) && q2.items.length > 0) { quote = q2; break; }
+        }
+      }
+      if (!quote) quote = matches[0];
+
+      // Obtener items de la cotizacion
+      var items = [];
+      if (quote.state && Array.isArray(quote.state.items)) items = quote.state.items;
+      else if (Array.isArray(quote.items)) items = quote.items;
+
+      // Calcular costo real a partir de items x catalogo de costos
+      var costoReal = 0;
+      if (items.length > 0) {
+        items.forEach(function(item) {
+          var nombre = item.name || item.nombre || item.descripcion || item.ESQUEMA || item.esquema || '';
+          var qty    = parseFloat(item.qty || item.cantidad || item.quantity || 1);
+          var costo  = buscarCostoItem(nombre);
+          costoReal += costo * qty;
+        });
+      } else {
+        // Sin items detallados: buscar por nombre del tratamiento del registro SAI
+        var esqNom = norm(row.tratamiento || row.servicio || row.esquema || '');
+        if (esqNom) costoReal = buscarCostoItem(esqNom);
+      }
+
+      var utilRow = montoServicio - costoReal;
+      utilidadTotal += utilRow;
+      var sede = row.sede || 'Sin Sede';
+      utilidadPorSede[sede] = (utilidadPorSede[sede] || 0) + utilRow;
+    });
+
+    // 4. Actualizar el DOM
+    var totalEl = document.getElementById('execUtilidadTotal');
+    var sedesEl = document.getElementById('execUtilidadSedes');
+
+    if (totalEl) {
+      totalEl.textContent = formatearMoneda(utilidadTotal);
+      totalEl.style.color = utilidadTotal >= 0 ? '#22c55e' : '#ef4444';
+    }
+    if (sedesEl) {
+      if (todasCotizaciones.length === 0) {
+        sedesEl.textContent = 'Panel INNVIDA sin datos aun (recarga en unos segundos)';
+        sedesEl.style.color = '#f59e0b';
+      } else {
+        var sedesEntries = Object.entries(utilidadPorSede)
+          .filter(function(pair) { return pair[1] !== 0; })
+          .sort(function(a, b) { return b[1] - a[1]; });
+
+        if (sedesEntries.length > 0) {
+          sedesEl.textContent = sedesEntries.map(function(pair) {
+            return pair[0] + ': ' + formatearMoneda(pair[1]);
+          }).join(' | ');
+          sedesEl.style.color = '';
+        } else if (matchCount === 0) {
+          sedesEl.textContent = 'Sin coincidencias de pacientes (' + todasCotizaciones.length + ' cotizaciones cargadas)';
+          sedesEl.style.color = '#f59e0b';
+        } else {
+          sedesEl.textContent = matchCount + ' pacientes cruzados, costo no encontrado en catalogo';
+          sedesEl.style.color = '#f59e0b';
+        }
+      }
+    }
+
+    console.log('[Utilidad] Cotizaciones cargadas:', todasCotizaciones.length, '| Matches:', matchCount, '| Sin match:', noMatchCount);
+
+  } catch (err) {
+    console.error('[Utilidad] Error:', err);
+    var el = document.getElementById('execUtilidadSedes');
+    if (el) el.textContent = 'Error: ' + err.message;
+  }
+}
+
+// Listener para recibir datos de cotizaciones del padre (resuelve CORS en local)
+window.cotizacionesDesdePadre = [];
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'INNVIDA_COTIZACIONES') {
+    console.log('[Utilidad] Recibidas cotizaciones del padre:', e.data.cotizaciones.length);
+    window.cotizacionesDesdePadre = e.data.cotizaciones || [];
+    if (typeof execUltimaData !== 'undefined' && execUltimaData && execUltimaData.length > 0) {
+      const rowsConMontoTodas = execUltimaData.filter(r => r.montoServicio !== null && r.montoServicio !== undefined && r.montoServicio !== "");
+      calcularUtilidadGlobal(rowsConMontoTodas);
+    }
+  }
+});
+
+// Avisar al padre que el iframe ya esta listo (para que mande la data si ya la habia cargado)
+window.parent.postMessage({ type: 'SAI_READY' }, '*');
+
+

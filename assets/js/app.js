@@ -70,6 +70,15 @@
         '<span class="status-chip ok" style="background:#f59e0b">Cargando cotizador 3.0...</span>';
       renderData();
     }
+    // Enviar cotizaciones al iframe SAI via postMessage (funciona con file://)
+    window.cotizacionesPanelData = state.cotizaciones;
+    const saiFrame = document.getElementById('saiFrame');
+    if (saiFrame && saiFrame.contentWindow) {
+      saiFrame.contentWindow.postMessage({
+        type: 'INNVIDA_COTIZACIONES',
+        cotizaciones: state.cotizaciones
+      }, '*');
+    }
   }
 
   window.forceRefresh = () => renderData();
@@ -651,5 +660,19 @@
     console.error("Error en Firebase:", e);
     document.getElementById('statusBar').innerHTML = '<span class="status-chip err">Error de conexión</span>';
   }
+
+  // Escuchar cuando el iframe SAI este listo para enviarle la data si se cargo despues
+  window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'SAI_READY') {
+      console.log('Iframe SAI reporta estar listo. Enviando cotizaciones...');
+      const saiFrame = document.getElementById('saiFrame');
+      if (saiFrame && saiFrame.contentWindow) {
+        saiFrame.contentWindow.postMessage({
+          type: 'INNVIDA_COTIZACIONES',
+          cotizaciones: state.cotizaciones || []
+        }, '*');
+      }
+    }
+  });
 
 })();

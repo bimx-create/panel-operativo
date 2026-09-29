@@ -10,7 +10,7 @@
 <body>
 
 <div id="loginContainer" class="login-shell">
-  <button type="button" class="theme-toggle" data-theme-toggle>☀️ Claro</button>
+  <button type="button" class="theme-toggle" data-theme-toggle>�ܬ️ Claro</button>
   <div class="login-card">
     <h1>Acceso al panel</h1>
     <p>Selecciona tu perfil e ingresa tu contraseña.</p>
@@ -34,7 +34,7 @@
     </div>
     <div class="hero-actions">
       <span id="sesionInfo" class="session-pill"></span>
-      <button type="button" class="theme-toggle" data-theme-toggle>☀️ Claro</button>
+      <button type="button" class="theme-toggle" data-theme-toggle>�ܬ️ Claro</button>
       <button id="btnCerrarSesion" class="btn btn-ghost">Salir</button>
     </div>
   </header>
@@ -46,12 +46,12 @@
         <h2>Dashboard ejecutivo · Monto del servicio</h2>
         <p class="muted">Visión consolidada de facturación por sede y tabla dinámica interactiva del concentrado.</p>
       </div>
-      <span id="execActualizado" class="muted">—</span>
+      <span id="execActualizado" class="muted">�</span>
     </div>
 
     <div class="exec-tabs">
-      <button type="button" class="exec-tab-btn active" data-exec-tab="resumen">📊 Resumen ejecutivo</button>
-      <button type="button" class="exec-tab-btn" data-exec-tab="pivot">📊 Dashboard interactivo</button>
+      <button type="button" class="exec-tab-btn active" data-exec-tab="resumen">�x` Resumen ejecutivo</button>
+      <button type="button" class="exec-tab-btn" data-exec-tab="pivot">�x` Dashboard interactivo</button>
     </div>
 
     <div id="execTabResumen" class="exec-tab-panel">
@@ -68,12 +68,12 @@
       </article>
       <article class="exec-kpi">
         <span>Sede líder</span>
-        <strong id="execSedeLider">—</strong>
+        <strong id="execSedeLider">�</strong>
         <small id="execSedeLiderMonto">$0</small>
       </article>
       <article class="exec-kpi" id="execMetaCard">
         <span>Meta mensual ($4M)</span>
-        <strong id="execMetaAvance">—</strong>
+        <strong id="execMetaAvance">�</strong>
         <small id="execMetaDetalle">Calculando progreso...</small>
         <div style="background: rgba(255,255,255,0.1); border-radius: 4px; height: 6px; margin-top: 8px; overflow: hidden;">
           <div id="execMetaBar" style="background: #22c55e; height: 100%; width: 0%;"></div>
@@ -84,7 +84,7 @@
     <div class="exec-kpis exec-kpis-secondary">
       <article class="exec-kpi">
         <span>Origen del pago</span>
-        <strong id="execOrigenPagoPct">—</strong>
+        <strong id="execOrigenPagoPct">�</strong>
         <small id="execOrigenPagoDetalle">Sin datos suficientes</small>
       </article>
       <article class="exec-kpi" style="display: flex; flex-direction: column; justify-content: center; gap: 8px;">
@@ -105,8 +105,13 @@
       </article>
       <article class="exec-kpi">
         <span>Sede con mejor ticket promedio</span>
-        <strong id="execSedeMejorTicket">—</strong>
+        <strong id="execSedeMejorTicket">�</strong>
         <small id="execSedeMejorTicketMonto">$0 por registro</small>
+      </article>
+      <article class="exec-kpi">
+        <span>Utilidad total</span>
+        <strong id="execUtilidadTotal">$0</strong>
+        <small id="execUtilidadSedes" style="font-size:11px;">Calculando...</small>
       </article>
     </div>
 
@@ -137,7 +142,7 @@
     <section class="panel panel-kpis">
       <div class="section-head">
         <h2>KPIs operativos</h2>
-        <span id="ultimaActualizacion" class="muted">—</span>
+        <span id="ultimaActualizacion" class="muted">�</span>
       </div>
       <div class="kpi-grid">
         <article class="kpi-card accent-blue">
@@ -307,7 +312,7 @@
         <div class="field">
           <label>Sexo</label>
           <select id="edSexo">
-            <option value="">—</option>
+            <option value="">�</option>
             <option value="F">F</option>
             <option value="M">M</option>
           </select>
@@ -447,7 +452,7 @@
         <div class="field">
           <label>Sexo</label>
           <select id="nrSexo">
-            <option value="">—</option>
+            <option value="">�</option>
             <option value="F">F</option>
             <option value="M">M</option>
           </select>
@@ -520,6 +525,7 @@
 <script src="Excelimport.js"></script>
 <script src="nuevoRegistro.js"></script>
 <script src="auth.js"></script>
+<script src="../assets/costosData.js"></script>
 <script src="main.js"></script>
 <script src="dashboard.js"></script>
 <datalist id="listaAseguradoras">
