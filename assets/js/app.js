@@ -251,6 +251,11 @@
     // Resumen uses its own semana selector
     const fSemR2 = document.getElementById('filtroSemanaResumen');
     const semResumen = (fSemR2 && fSemR2.value !== 'all' && grouped[fSemR2.value]) ? fSemR2.value : selectedSemana;
+
+    // Notificar el mes seleccionado a los iframes (SAI y NOMAD) para históricos
+    const fMesR2 = document.getElementById('filtroMesResumen');
+    notificarMesAIframes(fMesR2 ? fMesR2.value : 'all');
+
     renderResumenDirectivo(grouped[semResumen].kams, semResumen);
 
     const kamKeys = Object.keys(kData).sort();
@@ -298,24 +303,73 @@
     romarico: { completo: 0, montoTotal: 0, totalCount: 0 }
   };
 
+  // Notifica a los iframes (NOMAD y SAI) el mes seleccionado para que filtren históricos
+  function notificarMesAIframes(mesStr) {
+    const nomadFrame = document.getElementById('nomadFrame');
+    if (nomadFrame && nomadFrame.contentWindow) {
+      nomadFrame.contentWindow.postMessage({
+        type: 'PANEL_FILTRO_MES',
+        mes: mesStr  // formato "YYYY-MM" o "all"
+      }, '*');
+    }
+    
+    const saiFrame = document.getElementById('saiFrame');
+    if (saiFrame && saiFrame.contentWindow) {
+      saiFrame.contentWindow.postMessage({
+        type: 'PANEL_FILTRO_MES',
+        mes: mesStr  // formato "YYYY-MM" o "all"
+      }, '*');
+    }
+  }
+
+  // Actualiza solo los números de las tarjetas SAI/NOMAD/Romarico sin re-renderizar todo
+  function updateIframeCards() {
+    const fmt = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
+
+    // Actualizar tarjeta SAI
+    const saiMonto  = document.getElementById('_card_sai_monto');
+    const saiConteo = document.getElementById('_card_sai_conteo');
+    const saiMeta   = document.getElementById('_card_sai_meta');
+    const saiPct    = document.getElementById('_card_sai_pct');
+    const saiBar    = document.getElementById('_card_sai_bar');
+    if (saiMonto)  saiMonto.textContent  = fmt.format(iframeData.sai.montoTotal);
+    if (saiConteo) saiConteo.textContent = `${iframeData.sai.conteo} registros facturados`;
+    if (saiMeta)   saiMeta.textContent   = `Meta mensual: ${fmt.format(iframeData.sai.meta)}`;
+    const pct = iframeData.sai.pctAvance || 0;
+    const pctColor = pct >= 100 ? '#37d39a' : (pct >= 50 ? '#f59e0b' : '#38bdf8');
+    if (saiPct) { saiPct.textContent = `${pct.toFixed(1)}%`; saiPct.style.color = pctColor; }
+    if (saiBar) { saiBar.style.width = `${Math.min(100, pct)}%`; saiBar.style.background = pctColor; }
+
+    // Actualizar tarjeta NOMAD
+    const nomadMonto  = document.getElementById('_card_nomad_monto');
+    const nomadConteo = document.getElementById('_card_nomad_conteo');
+    if (nomadMonto)  nomadMonto.textContent  = fmt.format(iframeData.nomad.cerradasMonto);
+    if (nomadConteo) nomadConteo.textContent = `${iframeData.nomad.cerradasCount} cotizaciones globales cerradas`;
+
+    // Actualizar tarjeta Romarico
+    const romMonto  = document.getElementById('_card_rom_monto');
+    const romConteo = document.getElementById('_card_rom_conteo');
+    const romPct    = document.getElementById('_card_rom_pct');
+    if (romMonto)  romMonto.textContent  = fmt.format(iframeData.romarico.montoTotal);
+    if (romConteo) romConteo.textContent = `${iframeData.romarico.completo} pacientes cerrados / ${iframeData.romarico.totalCount} totales`;
+    const cierrePct = iframeData.romarico.totalCount
+      ? ((iframeData.romarico.completo / iframeData.romarico.totalCount) * 100).toFixed(1) : 0;
+    if (romPct) romPct.textContent = `Cierre: ${cierrePct}%`;
+  }
+
   window.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'SAI_UPDATE') {
       iframeData.sai = event.data.payload;
-      const fSemR2 = document.getElementById('filtroSemanaResumen');
-      const semResumen = (fSemR2 && fSemR2.value !== 'all' && theGroupedData[fSemR2.value]) ? fSemR2.value : document.getElementById('filtroSemana').value;
-      if (theGroupedData[semResumen]) renderResumenDirectivo(theGroupedData[semResumen].kams, semResumen);
+      updateIframeCards();
     } else if (event.data && event.data.type === 'NOMAD_UPDATE') {
       iframeData.nomad = event.data.payload;
-      const fSemR2 = document.getElementById('filtroSemanaResumen');
-      const semResumen = (fSemR2 && fSemR2.value !== 'all' && theGroupedData[fSemR2.value]) ? fSemR2.value : document.getElementById('filtroSemana').value;
-      if (theGroupedData[semResumen]) renderResumenDirectivo(theGroupedData[semResumen].kams, semResumen);
+      updateIframeCards();
     } else if (event.data && event.data.type === 'ROMARICO_UPDATE') {
       iframeData.romarico = event.data.payload;
-      const fSemR2 = document.getElementById('filtroSemanaResumen');
-      const semResumen = (fSemR2 && fSemR2.value !== 'all' && theGroupedData[fSemR2.value]) ? fSemR2.value : document.getElementById('filtroSemana').value;
-      if (theGroupedData[semResumen]) renderResumenDirectivo(theGroupedData[semResumen].kams, semResumen);
+      updateIframeCards();
     }
   });
+
 
   function generarDescripcionKam(kam, d) {
     const total = d.med + d.sMed + d.cot + d.sCot;
@@ -368,16 +422,16 @@
             <span>🏥 SAI - Monto de Servicio (Mes)</span>
             <span style="font-size:12px; background:rgba(56,189,248,0.2); padding:3px 8px; border-radius:12px;">En vivo</span>
           </div>
-          <div style="font-size: 28px; font-weight: 800; color: #fff;">${fmt.format(iframeData.sai.montoTotal)}</div>
-          <div style="font-size: 13px; color: #94a3b8; margin-top: 4px;">${iframeData.sai.conteo} registros facturados</div>
+          <div id="_card_sai_monto" style="font-size: 28px; font-weight: 800; color: #fff;">${fmt.format(iframeData.sai.montoTotal)}</div>
+          <div id="_card_sai_conteo" style="font-size: 13px; color: #94a3b8; margin-top: 4px;">${iframeData.sai.conteo} registros facturados</div>
           
           <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
             <div style="font-size: 12px; color: #94a3b8; display: flex; justify-content: space-between;">
-              <span>Meta mensual: ${fmt.format(iframeData.sai.meta)}</span>
-              <span style="font-weight:600; color:${iframeData.sai.pctAvance >= 100 ? '#37d39a' : (iframeData.sai.pctAvance >= 50 ? '#f59e0b' : '#38bdf8')}">${iframeData.sai.pctAvance.toFixed(1)}%</span>
+              <span id="_card_sai_meta">Meta mensual: ${fmt.format(iframeData.sai.meta)}</span>
+              <span id="_card_sai_pct" style="font-weight:600; color:${iframeData.sai.pctAvance >= 100 ? '#37d39a' : (iframeData.sai.pctAvance >= 50 ? '#f59e0b' : '#38bdf8')}">${iframeData.sai.pctAvance.toFixed(1)}%</span>
             </div>
             <div style="background: rgba(255,255,255,0.1); border-radius: 4px; height: 6px; margin-top: 6px; overflow: hidden;">
-              <div style="background: ${iframeData.sai.pctAvance >= 100 ? '#37d39a' : (iframeData.sai.pctAvance >= 50 ? '#f59e0b' : '#38bdf8')}; height: 100%; width: ${Math.min(100, iframeData.sai.pctAvance)}%;"></div>
+              <div id="_card_sai_bar" style="background: ${iframeData.sai.pctAvance >= 100 ? '#37d39a' : (iframeData.sai.pctAvance >= 50 ? '#f59e0b' : '#38bdf8')}; height: 100%; width: ${Math.min(100, iframeData.sai.pctAvance)}%;"></div>
             </div>
           </div>
         </div>
@@ -387,19 +441,19 @@
             <span>📑 NOMAD - Dashboard General</span>
             <span style="font-size:12px; background:rgba(167,139,250,0.2); padding:3px 8px; border-radius:12px;">Cerradas/Aceptadas</span>
           </div>
-          <div style="font-size: 28px; font-weight: 800; color: #fff;">${fmt.format(iframeData.nomad.cerradasMonto)}</div>
-          <div style="font-size: 13px; color: #94a3b8; margin-top: 4px;">${iframeData.nomad.cerradasCount} cotizaciones globales cerradas</div>
+          <div id="_card_nomad_monto" style="font-size: 28px; font-weight: 800; color: #fff;">${fmt.format(iframeData.nomad.cerradasMonto)}</div>
+          <div id="_card_nomad_conteo" style="font-size: 13px; color: #94a3b8; margin-top: 4px;">${iframeData.nomad.cerradasCount} cotizaciones globales cerradas</div>
           
           <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
              <div style="font-size: 12px; color: #a78bfa; font-weight: 600; margin-bottom: 6px;">📋 Seguimiento Romarico (Facturables)</div>
              <div style="display: flex; justify-content: space-between; align-items: center;">
                <div>
-                 <div style="font-size: 16px; font-weight: 700; color: #fff;">${fmt.format(iframeData.romarico.montoTotal)}</div>
-                 <div style="font-size: 11px; color: #94a3b8;">${iframeData.romarico.completo} pacientes cerrados / ${iframeData.romarico.totalCount} totales</div>
+                 <div id="_card_rom_monto" style="font-size: 16px; font-weight: 700; color: #fff;">${fmt.format(iframeData.romarico.montoTotal)}</div>
+                 <div id="_card_rom_conteo" style="font-size: 11px; color: #94a3b8;">${iframeData.romarico.completo} pacientes cerrados / ${iframeData.romarico.totalCount} totales</div>
                </div>
                <div style="font-size: 11px; text-align: right; color: #94a3b8;">
                   <div style="background: rgba(167,139,250,0.15); border: 1px solid rgba(167,139,250,0.3); padding: 3px 6px; border-radius: 6px; display: inline-block;">
-                    Cierre: ${iframeData.romarico.totalCount ? ((iframeData.romarico.completo / iframeData.romarico.totalCount)*100).toFixed(1) : 0}%
+                    <span id="_card_rom_pct">Cierre: ${iframeData.romarico.totalCount ? ((iframeData.romarico.completo / iframeData.romarico.totalCount)*100).toFixed(1) : 0}%</span>
                   </div>
                </div>
              </div>

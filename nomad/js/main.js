@@ -76,6 +76,19 @@ let sanareRows = [];
 let nomadRows  = [];
 let allRows    = [];
 
+// Mes filtrado desde el panel operativo padre ("YYYY-MM" o "all" = mes actual)
+let mesFiltradoPanel = 'all';
+
+// Escuchar el filtro de mes enviado desde el panel operativo (iframe padre)
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'PANEL_FILTRO_MES') {
+    mesFiltradoPanel = e.data.mes || 'all';
+    // Recalcular y re-enviar el total al panel con el mes correcto
+    actualizarTotales(allRows);
+  }
+});
+
+
 // DOM
 const tbody = document.getElementById("tablaCotizacionesBody");
 const totalGlobalElem       = document.getElementById("totalGlobal");
@@ -389,15 +402,26 @@ function actualizarTotales(filas) {
   if(typeof totalSanareCountElem !== 'undefined' && totalSanareCountElem) totalSanareCountElem.textContent = perdidas.length;
 
   // ── NOMAD_UPDATE para el panel operativo ──
-  // Contamos cerradas/aceptadas usando fechaCierre (no fechaEmision) sobre TODAS las filas.
-  // Así, editar fechaCierre de una cotización de cualquier mes la contará en el mes correcto.
+  // Filtra por el mes seleccionado en el panel (mesFiltradoPanel).
+  // Si es "all" o vacío, usa el mes en curso.
   try {
     if (window.parent && window.parent !== window) {
       const ahora = new Date();
-      const mesActualYYYY = ahora.getFullYear();
-      const mesActualMM   = ahora.getMonth(); // 0-based
 
-      // Cerradas del mes en curso según fechaCierre (sobre allRows completo)
+      let filtroAnio, filtroMes;
+
+      if (mesFiltradoPanel && mesFiltradoPanel !== 'all') {
+        // Viene como "YYYY-MM" desde el panel
+        const partesFiltro = mesFiltradoPanel.split('-');
+        filtroAnio = parseInt(partesFiltro[0], 10);
+        filtroMes  = parseInt(partesFiltro[1], 10) - 1; // 0-based
+      } else {
+        // Sin filtro → mes actual
+        filtroAnio = ahora.getFullYear();
+        filtroMes  = ahora.getMonth(); // 0-based
+      }
+
+      // Cerradas del mes indicado según fechaCierre (sobre allRows completo)
       const cerradasPorCierre = allRows.filter(r => {
         if ((r.status1 || "").toLowerCase() !== "cerrada / aceptada") return false;
         if (!r.fechaCierre) return false;
@@ -405,7 +429,7 @@ function actualizarTotales(filas) {
         if (partes.length < 2) return false;
         const anio = parseInt(partes[0], 10);
         const mes  = parseInt(partes[1], 10) - 1; // 0-based
-        return anio === mesActualYYYY && mes === mesActualMM;
+        return anio === filtroAnio && mes === filtroMes;
       });
 
       const montoPorCierre = cerradasPorCierre.reduce((acc, r) => acc + (r.total || 0), 0);

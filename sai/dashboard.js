@@ -877,6 +877,44 @@ window.addEventListener('message', function(e) {
       const rowsConMontoTodas = execUltimaData.filter(r => r.montoServicio !== null && r.montoServicio !== undefined && r.montoServicio !== "");
       calcularUtilidadGlobal(rowsConMontoTodas);
     }
+  } else if (e.data && e.data.type === 'PANEL_FILTRO_MES') {
+    // Sincronizar el mes seleccionado en el Resumen Directivo del padre con SAI
+    let y, m;
+    const mesRecibido = e.data.mes || 'all';
+    
+    if (mesRecibido === 'all') {
+      const hoy = new Date();
+      y = hoy.getFullYear();
+      m = hoy.getMonth();
+    } else {
+      const partes = mesRecibido.split('-');
+      y = parseInt(partes[0], 10);
+      m = parseInt(partes[1], 10) - 1; // 0-based
+    }
+    
+    // Calcular primero y último día del mes
+    const primerDia = new Date(y, m, 1);
+    const ultimoDia = new Date(y, m + 1, 0);
+    
+    const formatISO = (d) => {
+      const yStr = d.getFullYear();
+      const mStr = String(d.getMonth() + 1).padStart(2, '0');
+      const dStr = String(d.getDate()).padStart(2, '0');
+      return `${yStr}-${mStr}-${dStr}`;
+    };
+
+    const inicioEl = document.getElementById("filtroFechaInicio");
+    const finEl = document.getElementById("filtroFechaFin");
+    
+    if (inicioEl && finEl) {
+      inicioEl.value = formatISO(primerDia);
+      finEl.value = formatISO(ultimoDia);
+      
+      // Forzar el filtrado para recalcular SAI y enviar el total al padre
+      if (typeof applyFilters === 'function') {
+        applyFilters();
+      }
+    }
   }
 });
 
