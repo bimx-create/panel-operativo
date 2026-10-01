@@ -30,16 +30,28 @@ const firebaseConfigNomad = {
   appId: "1:736481537624:web:6f06667cf34bccc532642d"
 };
 
+const firebaseConfigPrixzNomad = {
+  apiKey: "AIzaSyDhEq8xEJuD0uCNrFzQ9YChRM36WfBYCgk",
+  authDomain: "prixz-nomad.firebaseapp.com",
+  projectId: "prixz-nomad",
+  storageBucket: "prixz-nomad.firebasestorage.app",
+  messagingSenderId: "783711568102",
+  appId: "1:783711568102:web:5aa7b9baaa64160cd1fb27"
+};
+
 // IMPORTANTE: en ambos proyectos el nombre de la colección es "cotizaciones"
 const SANARE_COLLECTION = "cotizaciones";
 const NOMAD_COLLECTION  = "cotizaciones";
+const PRIXZ_NOMAD_COLLECTION = "solicitudes";
 
 // Inicializar apps
 const appSanare = initializeApp(firebaseConfigSanare, "sanareApp");
 const appNomad  = initializeApp(firebaseConfigNomad, "nomadApp");
+const appPrixzNomad = initializeApp(firebaseConfigPrixzNomad, "prixzNomadApp");
 
 const dbSanare = getFirestore(appSanare);
 const dbNomad  = getFirestore(appNomad);
+const dbPrixzNomad = getFirestore(appPrixzNomad);
 
 // Estatus
 const ESTATUS_1_OPCIONES = [
@@ -74,6 +86,7 @@ function obtenerSedePorTelefono(telefono) {
 // Estado en memoria
 let sanareRows = [];
 let nomadRows  = [];
+let prixzNomadRows = [];
 let allRows    = [];
 
 // Mes filtrado desde el panel operativo padre ("YYYY-MM" o "all" = mes actual)
@@ -83,6 +96,42 @@ let mesFiltradoPanel = 'all';
 window.addEventListener('message', function(e) {
   if (e.data && e.data.type === 'PANEL_FILTRO_MES') {
     mesFiltradoPanel = e.data.mes || 'all';
+    
+    let y, m;
+    if (mesFiltradoPanel === 'all') {
+      const hoy = new Date();
+      y = hoy.getFullYear();
+      m = hoy.getMonth();
+    } else {
+      const partes = mesFiltradoPanel.split('-');
+      y = parseInt(partes[0], 10);
+      m = parseInt(partes[1], 10) - 1; // 0-based
+    }
+
+    // Calcular primero y último día del mes
+    const primerDia = new Date(y, m, 1);
+    const ultimoDia = new Date(y, m + 1, 0);
+
+    const formatISO = (d) => {
+      const yStr = d.getFullYear();
+      const mStr = String(d.getMonth() + 1).padStart(2, '0');
+      const dStr = String(d.getDate()).padStart(2, '0');
+      return `${yStr}-${mStr}-${dStr}`;
+    };
+
+    const inicioEl = document.getElementById("filtroFechaInicio");
+    const finEl    = document.getElementById("filtroFechaFin");
+
+    if (inicioEl && finEl) {
+      inicioEl.value = formatISO(primerDia);
+      finEl.value    = formatISO(ultimoDia);
+      
+      // Forzar el filtrado interno de la tabla Nomad
+      if (typeof aplicarFiltrosYRender === 'function') {
+        aplicarFiltrosYRender();
+      }
+    }
+
     // Recalcular y re-enviar el total al panel con el mes correcto
     actualizarTotales(allRows);
   }
@@ -145,6 +194,11 @@ function initRealtimeListeners() {
     nomadRows = snap.docs.map(d => mapNomadDoc(d));
     recomputeAll();
   }, err => console.error("Nomad listener error:", err));
+
+  onSnapshot(collection(dbPrixzNomad, PRIXZ_NOMAD_COLLECTION), snap => {
+    prixzNomadRows = snap.docs.map(d => mapPrixzNomadDoc(d));
+    recomputeAll();
+  }, err => console.error("Prixz Nomad listener error:", err));
 }
 
 // Map docs
@@ -222,8 +276,52 @@ function mapNomadDoc(docSnap) {
   };
 }
 
+function mapPrixzNomadDoc(docSnap) {
+  const data = docSnap.data();
+  const items = Array.isArray(data.items) ? data.items : [];
+  
+  let total = Number(data.totalGlobal || 0);
+  if (!total && items.length > 0) {
+    total = items.reduce((acc, it) => acc + (parseFloat(it.costo || it.precio || 0) || 0), 0);
+  }
+
+  const status1 = data.status1 || "Sin seguimiento";
+  const status2 = data.status2 || "Sin aplicación";
+  const motivo  = data.motivo  || "";
+
+  let fechaEmision = data.fechaCreacion || data.fechaSolicitud || "";
+  if (fechaEmision && fechaEmision.length > 10) {
+    fechaEmision = fechaEmision.substring(0, 10);
+  }
+
+  return {
+    origen: "PRIXZ_NOMAD",
+    idFirestore: docSnap.id,
+    collection: PRIXZ_NOMAD_COLLECTION,
+    folio: data.folio || "",
+    fechaEmision: fechaEmision,
+    fechaCierre: data.fechaCierre || "",
+    fechaProgramacion: data.fechaProgramacion || "",
+    fechaValidez: data.fechaValidez || "",
+    createdAt: data.createdAt || "",
+    paciente: data.paciente || "",
+    medico: data.medico || "",
+    kam: data.kam || "",
+    aseguradora: data.aseguradora || "",
+    telefono: data.telefono || "",
+    sede: data.sede || data.ciudad || "",
+    total: total,
+    diagnostico: data.diagnostico || "",
+    marca: "NOMAD",
+    pruebas: items,
+    status1: status1,
+    status2: status2,
+    motivo: motivo
+  };
+}
+
 function recomputeAll() {
-  allRows = [...nomadRows];
+  allRows = [...nomadRows, ...prixzNomadRows];
   aplicarFiltrosYRender();
   // Re-cruzar con Sheet si ya hay datos cargados
   if (typeof sheetRows !== 'undefined' && sheetRows.length) {
@@ -313,7 +411,10 @@ function renderTabla(filas) {
 
     const guardar = async () => {
       try {
-        const db = row.marca === "SANARE" ? dbSanare : dbNomad;
+        let db = dbNomad; // por defecto
+        if (row.origen === "SANARE") db = dbSanare;
+        else if (row.origen === "PRIXZ_NOMAD") db = dbPrixzNomad;
+        
         const ref = doc(db, row.collection, row.idFirestore);
         await updateDoc(ref, {
           status1: sel1.value,
