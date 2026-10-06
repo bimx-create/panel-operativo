@@ -56,6 +56,41 @@
     seg_cotizaciones: [],
     loaded: { main: false, sanare: false, nomad: false }
   };
+  const mesesSAI = new Set();
+  let mesesPanel = [];
+
+  function claveMesActual() {
+    const hoy = new Date();
+    return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  function actualizarOpcionesMes(select, meses, etiquetaTodos) {
+    if (!select) return;
+    const previo = select.value;
+    const ordenados = [...new Set(meses)]
+      .filter(m => /^\d{4}-\d{2}$/.test(m))
+      .sort((a, b) => a.localeCompare(b));
+
+    select.innerHTML = `<option value="all">${etiquetaTodos}</option>`;
+    ordenados.forEach(m => {
+      const opcion = document.createElement('option');
+      opcion.value = m;
+      opcion.text = m;
+      select.appendChild(opcion);
+    });
+
+    const valorInicial = ordenados.includes(claveMesActual()) ? claveMesActual() : 'all';
+    select.value = ordenados.includes(previo) ? previo : valorInicial;
+  }
+
+  // El iframe puede cargar antes que el panel. Pedimos el resumen de forma
+  // explícita para que el dato no dependa del orden de carga.
+  function solicitarResumenSAI() {
+    const saiFrame = document.getElementById('saiFrame');
+    if (saiFrame && saiFrame.contentWindow) {
+      saiFrame.contentWindow.postMessage({ type: 'SOLICITAR_SAI_UPDATE' }, '*');
+    }
+  }
 
   function updateStatus() {
     const s = state.loaded;
@@ -79,6 +114,7 @@
         cotizaciones: state.cotizaciones
       }, '*');
     }
+    solicitarResumenSAI();
   }
 
   window.forceRefresh = () => renderData();
@@ -187,15 +223,10 @@
 
   function renderData() {
     const { grouped, months } = processData();
+    mesesPanel = Array.from(months);
 
     const fMes = document.getElementById('filtroMes');
-    if (fMes.options.length === 1) {
-      Array.from(months).sort().reverse().forEach(m => {
-        if (!m) return;
-        const opt = document.createElement('option');
-        opt.value = m; opt.text = m; fMes.appendChild(opt);
-      });
-    }
+    actualizarOpcionesMes(fMes, mesesPanel, 'Todos los meses');
 
     const fSemana = document.getElementById('filtroSemana');
     const selectedMes = fMes.value;
@@ -218,13 +249,7 @@
     // Sync Resumen selectors
     const fMesR = document.getElementById('filtroMesResumen');
     const fSemR = document.getElementById('filtroSemanaResumen');
-    if (fMesR && fMesR.options.length <= 1) {
-      fMesR.innerHTML = '<option value="all">Todos los meses</option>';
-      Array.from(months).sort().reverse().forEach(m => {
-        if (!m) return;
-        const opt = document.createElement('option'); opt.value = m; opt.text = m; fMesR.appendChild(opt);
-      });
-    }
+    actualizarOpcionesMes(fMesR, [...mesesPanel, ...mesesSAI, claveMesActual()], 'Todos los meses');
     if (fSemR) {
       const prevSelR = fSemR.value;
       fSemR.innerHTML = '<option value="all">Seleccionar Semana...</option>';
@@ -235,6 +260,11 @@
       });
       if (fSemR.value === 'all' && validWeeks.length > 0) fSemR.value = validWeeks[0];
     }
+
+    // El filtro de mes debe llegar a SAI aunque no haya actividad de KAM
+    // para ese periodo en las fuentes de Firebase.
+    const fMesR2 = document.getElementById('filtroMesResumen');
+    notificarMesAIframes(fMesR2 ? fMesR2.value : 'all');
 
     const selectedSemana = fSemana.value;
     const repContent = document.getElementById('repContent');
@@ -251,10 +281,6 @@
     // Resumen uses its own semana selector
     const fSemR2 = document.getElementById('filtroSemanaResumen');
     const semResumen = (fSemR2 && fSemR2.value !== 'all' && grouped[fSemR2.value]) ? fSemR2.value : selectedSemana;
-
-    // Notificar el mes seleccionado a los iframes (SAI y NOMAD) para históricos
-    const fMesR2 = document.getElementById('filtroMesResumen');
-    notificarMesAIframes(fMesR2 ? fMesR2.value : 'all');
 
     renderResumenDirectivo(grouped[semResumen].kams, semResumen);
 
@@ -322,6 +348,20 @@
     }
   }
 
+  // SAI usa Supabase y puede tener meses que no existan en las fuentes de
+  // Firebase. Los agregamos al selector del resumen sin modificar la selección.
+  function agregarMesesSAI(meses) {
+    if (!Array.isArray(meses)) return;
+    meses
+      .filter(m => /^\d{4}-\d{2}$/.test(m))
+      .forEach(m => mesesSAI.add(m));
+    actualizarOpcionesMes(
+      document.getElementById('filtroMesResumen'),
+      [...mesesPanel, ...mesesSAI, claveMesActual()],
+      'Todos los meses'
+    );
+  }
+
   // Actualiza solo los números de las tarjetas SAI/NOMAD/Romarico sin re-renderizar todo
   function updateIframeCards() {
     const fmt = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
@@ -361,6 +401,8 @@
     if (event.data && event.data.type === 'SAI_UPDATE') {
       iframeData.sai = event.data.payload;
       updateIframeCards();
+    } else if (event.data && event.data.type === 'SAI_MESES_DISPONIBLES') {
+      agregarMesesSAI(event.data.meses);
     } else if (event.data && event.data.type === 'NOMAD_UPDATE') {
       iframeData.nomad = event.data.payload;
       updateIframeCards();
@@ -725,6 +767,7 @@
           type: 'INNVIDA_COTIZACIONES',
           cotizaciones: state.cotizaciones || []
         }, '*');
+        solicitarResumenSAI();
       }
     }
   });

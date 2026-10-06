@@ -142,21 +142,16 @@ function renderExecutiveDashboard(rows) {
   }
   $("execMetaBar").style.width = `${Math.min(100, pctAvance)}%`;
 
-  // Update Parent for Resumen Directivo
-  try {
-    if (window.parent && window.parent !== window) {
-      window.parent.postMessage({
-        type: 'SAI_UPDATE',
-        payload: {
-          montoTotal: montoTotal,
-          meta: meta,
-          pctAvance: pctAvance,
-          faltante: faltante,
-          conteo: rowsConMonto.length
-        }
-      }, '*');
-    }
-  } catch(e) {}
+  // Guardar y publicar el resumen. El padre puede pedirlo otra vez si su
+  // listener se activó después de la primera carga del iframe.
+  window.saiResumenActual = {
+    montoTotal: montoTotal,
+    meta: meta,
+    pctAvance: pctAvance,
+    faltante: faltante,
+    conteo: rowsConMonto.length
+  };
+  publicarResumenSAI();
 
   // ---- Origen del pago: aseguradora vs pago de bolsillo ----
   const montoBolsillo = rowsConMonto
@@ -869,6 +864,15 @@ async function calcularUtilidadGlobal(rowsConMontoTodas) {
 
 // Listener para recibir datos de cotizaciones del padre (resuelve CORS en local)
 window.cotizacionesDesdePadre = [];
+
+function publicarResumenSAI() {
+  if (!window.saiResumenActual || !window.parent || window.parent === window) return;
+  window.parent.postMessage({
+    type: 'SAI_UPDATE',
+    payload: window.saiResumenActual
+  }, '*');
+}
+
 window.addEventListener('message', function(e) {
   if (e.data && e.data.type === 'INNVIDA_COTIZACIONES') {
     console.log('[Utilidad] Recibidas cotizaciones del padre:', e.data.cotizaciones.length);
@@ -883,9 +887,14 @@ window.addEventListener('message', function(e) {
     const mesRecibido = e.data.mes || 'all';
     
     if (mesRecibido === 'all') {
-      const hoy = new Date();
-      y = hoy.getFullYear();
-      m = hoy.getMonth();
+      const inicioEl = document.getElementById("filtroFechaInicio");
+      const finEl = document.getElementById("filtroFechaFin");
+      if (inicioEl && finEl) {
+        inicioEl.value = "";
+        finEl.value = "";
+        if (typeof applyFilters === 'function') applyFilters();
+      }
+      return;
     } else {
       const partes = mesRecibido.split('-');
       y = parseInt(partes[0], 10);
@@ -915,10 +924,12 @@ window.addEventListener('message', function(e) {
         applyFilters();
       }
     }
+  } else if (e.data && e.data.type === 'SOLICITAR_SAI_UPDATE') {
+    publicarResumenSAI();
   }
 });
 
 // Avisar al padre que el iframe ya esta listo (para que mande la data si ya la habia cargado)
 window.parent.postMessage({ type: 'SAI_READY' }, '*');
 
-
+

@@ -92,19 +92,16 @@ function initFilters() {
     s => `<option value="${s}">${s || "Todas"}</option>`
   ).join("");
 
-  // Pre-llenar mes actual
+  // Al entrar, mostrar solamente el mes en curso.
   const hoy = new Date();
   const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
   const ultimoDia = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
-
-  // Formato YYYY-MM-DD
   const formatISO = (d) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
   };
-
   $("filtroFechaInicio").value = formatISO(primerDia);
   $("filtroFechaFin").value = formatISO(ultimoDia);
 }
@@ -410,7 +407,7 @@ function initEvents() {
   $("btnLimpiarFiltros").addEventListener("click", () => {
     $("filtroTexto").value = "";
     
-    // Restaurar mes actual
+    // Restaurar el mes en curso.
     const hoy = new Date();
     const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
     const ultimoDia = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
@@ -524,6 +521,17 @@ function mapRegistroSupabase(r) {
   };
 }
 
+function publicarMesesDisponiblesSAI() {
+  if (!window.parent || window.parent === window) return;
+  const meses = [...new Set(
+    allRows
+      .map(r => String(r.fechaInfusion || "").slice(0, 7))
+      .filter(m => /^\d{4}-\d{2}$/.test(m))
+  )].sort();
+
+  window.parent.postMessage({ type: "SAI_MESES_DISPONIBLES", meses }, "*");
+}
+
 async function cargarRegistros() {
   try {
     const { data, error } = await supabaseClient
@@ -538,6 +546,7 @@ async function cargarRegistros() {
         (b.fechaInfusion || "").localeCompare(a.fechaInfusion || "")
       );
 
+    publicarMesesDisponiblesSAI();
     applyFilters();
 
     $("ultimaActualizacion").textContent =
