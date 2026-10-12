@@ -1,7 +1,7 @@
 // ============================================================
 // 1) ESTADO — los datos reales se cargan desde Supabase
 // ============================================================
-const SEDES = ["", "Morelia", "Toluca", "Narvarte", "Tijuana"];
+const SEDES = ["", "Morelia", "Toluca", "Narvarte", "Tijuana", "Santa Fe"];
 
 function calcularTotal(subtotal, iva) {
   const sub = Number(subtotal) || 0;
@@ -91,19 +91,6 @@ function initFilters() {
   $("filtroSede").innerHTML = SEDES.map(
     s => `<option value="${s}">${s || "Todas"}</option>`
   ).join("");
-
-  // Al entrar, mostrar solamente el mes en curso.
-  const hoy = new Date();
-  const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-  const ultimoDia = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
-  const formatISO = (d) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  };
-  $("filtroFechaInicio").value = formatISO(primerDia);
-  $("filtroFechaFin").value = formatISO(ultimoDia);
 }
 
 // ============================================================
@@ -406,20 +393,8 @@ function initEvents() {
 
   $("btnLimpiarFiltros").addEventListener("click", () => {
     $("filtroTexto").value = "";
-    
-    // Restaurar el mes en curso.
-    const hoy = new Date();
-    const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-    const ultimoDia = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
-    const formatISO = (d) => {
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
-    };
-    $("filtroFechaInicio").value = formatISO(primerDia);
-    $("filtroFechaFin").value = formatISO(ultimoDia);
-
+    $("filtroFechaInicio").value = "";
+    $("filtroFechaFin").value = "";
     $("filtroSede").value = "";
     document.querySelectorAll(".filtro-marca")
       .forEach(cb => cb.checked = true);
@@ -521,17 +496,6 @@ function mapRegistroSupabase(r) {
   };
 }
 
-function publicarMesesDisponiblesSAI() {
-  if (!window.parent || window.parent === window) return;
-  const meses = [...new Set(
-    allRows
-      .map(r => String(r.fechaInfusion || "").slice(0, 7))
-      .filter(m => /^\d{4}-\d{2}$/.test(m))
-  )].sort();
-
-  window.parent.postMessage({ type: "SAI_MESES_DISPONIBLES", meses }, "*");
-}
-
 async function cargarRegistros() {
   try {
     const { data, error } = await supabaseClient
@@ -546,7 +510,6 @@ async function cargarRegistros() {
         (b.fechaInfusion || "").localeCompare(a.fechaInfusion || "")
       );
 
-    publicarMesesDisponiblesSAI();
     applyFilters();
 
     $("ultimaActualizacion").textContent =
