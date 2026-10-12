@@ -33,6 +33,13 @@ const USERS = [
     role: "sede",
     sede: "Tijuana",
     displayName: "Sede Tijuana"
+  },
+  {
+    username: "santafe",
+    password: "santafe2026",
+    role: "sede",
+    sede: "Santa Fe",
+    displayName: "Sede Santa Fe"
   }
 ];
 
@@ -108,14 +115,22 @@ function applyRoleToUI() {
     );
   }
 
-  // Importar solamente para sedes; exportar solamente para administración.
+  // Importar y exportar solamente para administración.
   const btnImportar = document.getElementById("btnImportarExcel");
   const btnExportar = document.getElementById("btnExportarExcel");
+  const importSede = document.getElementById("importSede");
 
   if (btnImportar) {
     btnImportar.classList.toggle(
       "hidden",
-      currentUser.role === "admin"
+      currentUser.role !== "admin"
+    );
+  }
+
+  if (importSede) {
+    importSede.classList.toggle(
+      "hidden",
+      currentUser.role !== "admin"
     );
   }
 
@@ -167,13 +182,39 @@ function applyRoleToUI() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Auto-login como administrador (modo embebido en el reporte)
-  const adminUser = USERS.find(u => u.role === "admin");
-  currentUser = adminUser;
-  saveSession(adminUser);
-  showApp();
+  const saved = loadSession();
 
-  // Ocultar botón de salir en modo embebido
+  if (saved) {
+    currentUser = saved;
+    showApp();
+  }
+
+  const form = document.getElementById("loginForm");
+
+  form.addEventListener("submit", e => {
+    e.preventDefault();
+
+    const username = document.getElementById("loginUsername").value;
+    const password = document.getElementById("loginPassword").value;
+    const errorEl = document.getElementById("loginError");
+
+    const user = findUser(username, password);
+
+    if (user) {
+      currentUser = user;
+      saveSession(user);
+      errorEl.style.display = "none";
+      showApp();
+    } else {
+      errorEl.style.display = "block";
+    }
+  });
+
   const btnSalir = document.getElementById("btnCerrarSesion");
-  if (btnSalir) btnSalir.style.display = "none";
+
+  btnSalir.addEventListener("click", () => {
+    clearSession();
+    currentUser = null;
+    window.location.reload();
+  });
 });
