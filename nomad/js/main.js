@@ -1070,14 +1070,26 @@ function normalizarNombre(nombre) {
     .trim();
 }
 
-// ── Helper: un registro está completo si seguimiento O notas lo indica ──
+// ── Helper: un registro está completo/cerrado ──
+// Condición: col H (notas/SEGUIMIENTO) indica estado de completado
+//            Y además tiene FECHA DE ENVIO registrada en col B
 function esCompletadoRow(r) {
+  // Debe tener FECHA DE ENVIO registrada (col B no vacía ni "Pendiente")
+  const tieneEnvio = r.fechaEnvio && r.fechaEnvio.trim() !== "" &&
+                     r.fechaEnvio.trim().toLowerCase() !== "pendiente";
+
   const checkStr = (s) => {
     const t = (s || "").toUpperCase();
-    return t.includes("COMPLET") || t.includes("ENVIADO EEUU") ||
-           t.includes("EN PROCESO DE RESULTADO") || t.includes("ENTREGARON RESULT");
+    return t.includes("COMPLET") ||
+           t.includes("EEUU") ||              // captura "ENVIO EEUU" y "ENVIADO EEUU"
+           t.includes("EN PROCESO DE RESULTADO") || t.includes("ENTREGARON RESULT") ||
+           t.includes("RESULTADOS ENVI");     // captura "RESULTADOS ENVIADOS", "RESULTADOS ENVIADO"
   };
-  return checkStr(r.seguimiento) || checkStr(r.notas);
+  // col G (seguimiento/proceso) y col H (SEGUIMIENTO real con los estados)
+  const tieneEstado = checkStr(r.seguimiento) || checkStr(r.notas);
+
+  // Ambas condiciones deben cumplirse
+  return tieneEnvio && tieneEstado;
 }
 
 // ── Detectar clase CSS de estado ──
@@ -1124,30 +1136,32 @@ function procesarSheet(csvText) {
   const rows = parseCSV(csvText);
   if (!rows.length) return;
 
-  // Primera fila = encabezados (índices 0-8)
+  // Primera fila = encabezados (índices 0-9)
   // 0: FECHA DE SOLICITUD
-  // 1: NOMBRE DE PACIENTE
-  // 2: PRUEBA
-  // 3: COSTO CON IVA
-  // 4: FORMA DE PAGO
-  // 5: Columna 7 (notas/proceso)
-  // 6: SEGUIMIENTO
-  // 7: SE SOLICITA APOYO COI
-  // 8: RESPONSABLE
+  // 1: FECHA DE ENVIO       ← nueva columna
+  // 2: NOMBRE DE PACIENTE
+  // 3: PRUEBA
+  // 4: COSTO CON IVA
+  // 5: FORMA DE PAGO
+  // 6: Columna 7 (notas/proceso)
+  // 7: SEGUIMIENTO          ← col H real (estados: COMPLETADO, RESULTADOS ENVIADOS…)
+  // 8: SE SOLICITA APOYO COI
+  // 9: RESPONSABLE
 
   sheetRows = rows
     .slice(1) // saltar encabezado
-    .filter(r => r.length >= 2 && r[1] && r[1].trim() && r[1].trim() !== "Collapse genes")
+    .filter(r => r.length >= 3 && r[2] && r[2].trim() && r[2].trim() !== "Collapse genes")
     .map(r => ({
-      fecha:        (r[0] || "").trim(),
-      paciente:     (r[1] || "").trim(),
-      prueba:       (r[2] || "").trim(),
-      costoIva:     (r[3] || "").trim(),
-      formaPago:    (r[4] || "").trim(),
-      seguimiento:  (r[5] || "").trim(),
-      notas:        (r[6] || "").trim(),
-      apoyoCoi:     (r[7] || "").trim(),
-      responsable:  (r[8] || "").trim(),
+      fecha:        (r[0] || "").trim(),   // col A: FECHA DE SOLICITUD
+      fechaEnvio:   (r[1] || "").trim(),   // col B: FECHA DE ENVIO ← nuevo
+      paciente:     (r[2] || "").trim(),   // col C: NOMBRE DE PACIENTE
+      prueba:       (r[3] || "").trim(),   // col D: PRUEBA
+      costoIva:     (r[4] || "").trim(),   // col E: COSTO CON IVA
+      formaPago:    (r[5] || "").trim(),   // col F: FORMA DE PAGO
+      seguimiento:  (r[6] || "").trim(),   // col G: Columna 7 (notas/proceso)
+      notas:        (r[7] || "").trim(),   // col H: SEGUIMIENTO (estados completo/enviado)
+      apoyoCoi:     (r[8] || "").trim(),   // col I: SE SOLICITA APOYO COI
+      responsable:  (r[9] || "").trim(),   // col J: RESPONSABLE
       // cruce Firebase
       firebaseMatch: null
     }));
@@ -1260,7 +1274,8 @@ function aplicarFiltrosRomarico() {
   const fin = filtroRomaricoFechaFin ? filtroRomaricoFechaFin.value : "";
   if (ini || fin) {
     filas = filas.filter(r => {
-      const dIso = parseFechaSheetIso(r.fecha);
+      // Usar fechaEnvio primero; si no tiene, caer a fecha de solicitud
+      const dIso = parseFechaSheetIso(r.fechaEnvio || r.fecha);
       if (!dIso) return true; // Si no hay fecha o es inválida, se deja pasar o se filtra. Asumimos dejar pasar o no? Mejor ocultar si no coincide. 
       // Si piden fecha y no tiene, no lo mostramos a menos que no hayan puesto filtro.
       if (ini && dIso < ini) return false;
@@ -1342,8 +1357,8 @@ function actualizarKpisRomarico(filas) {
       montoTotal += parseMonto(r.costoIva);
     }
 
-    // Contar cuántas se solicitaron esta semana
-    if (esDeEstaSemana(r.fecha)) {
+    // Contar cuántas se enviaron esta semana (usar fechaEnvio, fallback a fecha de solicitud)
+    if (esDeEstaSemana(r.fechaEnvio || r.fecha)) {
       deEstaSemana++;
     }
   });
@@ -1415,22 +1430,22 @@ function actualizarGraficosRomarico(filas) {
     datasets: [{ label: "Conteo de Pruebas", data: Object.values(porPrueba), backgroundColor: "#f59e0b" }]
   }, { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true }}});
 
-  // Tendencia Mensual (Romarico)
+  // Tendencia Mensual (Romarico) — se usa fechaEnvio para contabilizar en el mes correcto
   const porMes = {};
   filas.forEach(r => {
-    // fecha ej. "2024-03-15" o formato de sheet, se asume dd/mm/yyyy o mm/dd/yyyy
-    // Si viene del sheet y no normalizamos, tomemos el formato si es dd/mm/yyyy -> mm/yyyy
+    // Prioridad: FECHA DE ENVIO (col B). Fallback: FECHA DE SOLICITUD
+    const fechaRef = r.fechaEnvio || r.fecha;
     let mes = "Sin fecha";
-    if (r.fecha) {
+    if (fechaRef && fechaRef.trim() && fechaRef.trim().toLowerCase() !== "pendiente") {
       // Intentar extraer de "dd/mm/yyyy" o "yyyy-mm-dd"
-      if (r.fecha.includes("/")) {
-        const partes = r.fecha.split("/");
+      if (fechaRef.includes("/")) {
+        const partes = fechaRef.split("/");
         if (partes.length >= 3) {
           // asumiendo dd/mm/yyyy
           mes = partes[2] + "-" + partes[1].padStart(2, '0');
         }
-      } else if (r.fecha.includes("-")) {
-        const partes = r.fecha.split("-");
+      } else if (fechaRef.includes("-")) {
+        const partes = fechaRef.split("-");
         if (partes.length >= 2) {
           mes = partes[0] + "-" + partes[1].padStart(2, '0');
         }
@@ -1462,9 +1477,10 @@ function renderTablaRomarico(filas) {
     badge.textContent = row.firebaseMatch ? "✅ Match" : "⚠️ Sin match";
     tdMatch.appendChild(badge);
 
-    // 2. Fecha solicitud
+    // 2. Fecha solicitud / Fecha envío
     const tdFecha = document.createElement("td");
-    tdFecha.textContent = row.fecha || "—";
+    tdFecha.innerHTML = `<span style="display:block;font-size:0.72rem;color:#9ca3af">Solic: ${row.fecha || "—"}</span>` +
+                        `<span style="display:block;font-weight:600">${row.fechaEnvio || "Pendiente"}</span>`;
 
     // 3. Paciente
     const tdPac = document.createElement("td");
@@ -1586,7 +1602,7 @@ function exportarCsvRomarico() {
   if (!sheetCruzadas.length) { alert("No hay datos para exportar."); return; }
 
   const encabezados = [
-    "match","fecha_solicitud","paciente","prueba","costo_iva","forma_pago",
+    "match","fecha_solicitud","fecha_envio","paciente","prueba","costo_iva","forma_pago",
     "seguimiento_romarico","notas","apoyo_coi","responsable",
     "folio_firebase","kam","status1","status2","comentario_firebase"
   ];
@@ -1595,7 +1611,7 @@ function exportarCsvRomarico() {
     const fb = r.firebaseMatch;
     return [
       fb ? "Con match" : "Sin match",
-      r.fecha, r.paciente, r.prueba, r.costoIva, r.formaPago,
+      r.fecha, r.fechaEnvio || "", r.paciente, r.prueba, r.costoIva, r.formaPago,
       r.seguimiento, r.notas, r.apoyoCoi, r.responsable,
       fb ? (fb.folio || "") : "",
       fb ? (fb.kam || "") : "",
