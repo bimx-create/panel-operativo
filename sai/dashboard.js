@@ -106,8 +106,6 @@ function renderExecutiveDashboard(rows) {
   if (sedesOrdenadas.length) {
     $("execSedeLider").textContent = sedesOrdenadas[0][0];
     $("execSedeLiderMonto").textContent = formatearMoneda(sedesOrdenadas[0][1]);
-  calcularUtilidadGlobal(rowsConMontoTodas);
-
   } else {
     $("execSedeLider").textContent = "—";
     $("execSedeLiderMonto").textContent = "$0";
@@ -118,40 +116,21 @@ function renderExecutiveDashboard(rows) {
   const mesesOrdenados = Array.from(porMes.keys()).sort();
   const valoresMes = mesesOrdenados.map(m => porMes.get(m));
 
-  // ---- Meta mensual (4M) ----
-  const meta = 4000000;
-  const pctAvance = (montoTotal / meta) * 100;
-  $("execMetaAvance").textContent = `${pctAvance.toFixed(1)}%`;
-  
-  if (pctAvance >= 100) {
-    $("execMetaAvance").style.color = "#37d39a"; // Verde
-    $("execMetaBar").style.background = "#37d39a";
-  } else if (pctAvance >= 50) {
-    $("execMetaAvance").style.color = "#f59e0b"; // Naranja
-    $("execMetaBar").style.background = "#f59e0b";
+  const cardCrecimiento = $("execCrecimiento");
+  const detalleCrecimiento = $("execCrecimientoDetalle");
+  if (mesesOrdenados.length >= 2) {
+    const actual = valoresMes[valoresMes.length - 1];
+    const anterior = valoresMes[valoresMes.length - 2];
+    const cambio = anterior > 0 ? ((actual - anterior) / anterior) * 100 : (actual > 0 ? 100 : 0);
+    const signo = cambio >= 0 ? "+" : "";
+    cardCrecimiento.textContent = `${signo}${cambio.toFixed(1)}%`;
+    cardCrecimiento.style.color = cambio >= 0 ? "#37d39a" : "#ff6b81";
+    detalleCrecimiento.textContent = `${nombreMes(mesesOrdenados[mesesOrdenados.length - 1])} vs ${nombreMes(mesesOrdenados[mesesOrdenados.length - 2])}`;
   } else {
-    $("execMetaAvance").style.color = "#38bdf8"; // Azul
-    $("execMetaBar").style.background = "#38bdf8";
+    cardCrecimiento.textContent = "—";
+    cardCrecimiento.style.color = "";
+    detalleCrecimiento.textContent = "Sin datos suficientes";
   }
-  
-  const faltante = Math.max(0, meta - montoTotal);
-  if (faltante > 0) {
-    $("execMetaDetalle").textContent = `Faltan ${formatearMoneda(faltante)} para la meta`;
-  } else {
-    $("execMetaDetalle").textContent = `¡Meta superada por ${formatearMoneda(montoTotal - meta)}!`;
-  }
-  $("execMetaBar").style.width = `${Math.min(100, pctAvance)}%`;
-
-  // Guardar y publicar el resumen. El padre puede pedirlo otra vez si su
-  // listener se activó después de la primera carga del iframe.
-  window.saiResumenActual = {
-    montoTotal: montoTotal,
-    meta: meta,
-    pctAvance: pctAvance,
-    faltante: faltante,
-    conteo: rowsConMonto.length
-  };
-  publicarResumenSAI();
 
   // ---- Origen del pago: aseguradora vs pago de bolsillo ----
   const montoBolsillo = rowsConMonto
@@ -180,15 +159,22 @@ function renderExecutiveDashboard(rows) {
   // ---- Retención: pacientes nuevos vs recurrentes ----
   const nuevos = rowsConMonto.filter(r => esPacienteNuevo(r.primeraVez));
   const recurrentes = rowsConMonto.filter(r => !esPacienteNuevo(r.primeraVez));
-  
-  const montoNuevos = nuevos.reduce((a, r) => a + (Number(r.montoServicio) || 0), 0);
-  const montoRecurrentes = recurrentes.reduce((a, r) => a + (Number(r.montoServicio) || 0), 0);
-  
-  if ($("execNuevosVol")) $("execNuevosVol").textContent = `${nuevos.length} pac`;
-  if ($("execNuevosMonto")) $("execNuevosMonto").textContent = formatearMoneda(montoNuevos);
-  
-  if ($("execRecurrentesVol")) $("execRecurrentesVol").textContent = `${recurrentes.length} pac`;
-  if ($("execRecurrentesMonto")) $("execRecurrentesMonto").textContent = formatearMoneda(montoRecurrentes);
+  const pctRecurrentes = rowsConMonto.length ? (recurrentes.length / rowsConMonto.length) * 100 : 0;
+  if ($("execRetencionPct")) {
+    if (rowsConMonto.length) {
+      const mayorEsRecurrente = recurrentes.length >= nuevos.length;
+      const pctMayor = mayorEsRecurrente ? pctRecurrentes : (100 - pctRecurrentes);
+      const pctMenor = mayorEsRecurrente ? (100 - pctRecurrentes) : pctRecurrentes;
+      const etiquetaMayor = mayorEsRecurrente ? "recurrentes" : "de primera vez";
+      const etiquetaMenor = mayorEsRecurrente ? "de primera vez" : "recurrentes";
+
+      $("execRetencionPct").textContent = `${pctMayor.toFixed(0)}% ${etiquetaMayor}`;
+      $("execRetencionDetalle").textContent = `${pctMenor.toFixed(0)}% ${etiquetaMenor}`;
+    } else {
+      $("execRetencionPct").textContent = "—";
+      $("execRetencionDetalle").textContent = "Sin datos suficientes";
+    }
+  }
 
   // ---- Ticket promedio por sede (siempre todas las sedes, para comparar) ----
   const conteoPorSede = new Map();
@@ -257,6 +243,80 @@ function apartadoValorCelda(valor) {
   return String(valor).trim().toUpperCase() || "SIN DATO";
 }
 
+// La homologación es exclusiva del dashboard. Los registros capturados y sus
+// exportaciones conservan el texto original.
+function homologarDiagnostico(valor) {
+  const original = apartadoValorCelda(valor);
+  if (original === "SIN DATO") return original;
+
+  const texto = normalizarTexto(original)
+    .replace(/\bca\.(?=\s)/g, "ca")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ").trim()
+    // En los registros observados, "con AT pulmonar" acompaña al diagnóstico
+    // de mama; no representa aquí un segundo cáncer primario.
+    .replace(/\bcon at pulmonar\b/g, " ").replace(/\s+/g, " ").trim();
+
+  // Un registro que combina cáncer con otra enfermedad no se asigna a una sola.
+  if (/\b(y|mas)\b/.test(texto) && /\b(diabetes|leucemia|linfoma|mieloma|insuficiencia|enfermedad renal)\b/.test(texto)) return original;
+
+  const cancer = /\b(cancer|carcinoma|adenocarcinoma|neoplasia maligna|tumor maligno|ca)\b/.test(texto);
+  if (cancer) {
+    const sitios = [
+      [/\b(mama|mamario|mamaria|seno|senos)\b/, "CÁNCER DE MAMA"],
+      [/\b(pulmon|pulmonar|bronco|bronquial)\b/, "CÁNCER DE PULMÓN"],
+      [/\b(colon|colorrectal|colorectal|recto)\b/, "CÁNCER COLORRECTAL"],
+      [/\b(prostata|prostatico|prostatica)\b/, "CÁNCER DE PRÓSTATA"],
+      [/\b(cervix|cervical|cervicouterino|cervico uterino|cuello uterino|cuello de utero)\b/, "CÁNCER CERVICOUTERINO"],
+      [/\b(ovario|ovarico|ovarica)\b/, "CÁNCER DE OVARIO"],
+      [/\b(utero|uterino|uterina|endometrio|endometrial)\b/, "CÁNCER DE ÚTERO"],
+      [/\b(estomago|gastrico|gastrica)\b/, "CÁNCER GÁSTRICO"],
+      [/\b(pancreas|pancreatico|pancreatica)\b/, "CÁNCER DE PÁNCREAS"],
+      [/\b(higado|hepatico|hepatica|hepatocelular)\b/, "CÁNCER DE HÍGADO"],
+      [/\b(rinon|renal|rinal)\b/, "CÁNCER RENAL"],
+      [/\b(vejiga|vesical)\b/, "CÁNCER DE VEJIGA"],
+      [/\b(tiroides|tiroideo|tiroidea)\b/, "CÁNCER DE TIROIDES"],
+      [/\b(piel|cutaneo|cutanea)\b/, "CÁNCER DE PIEL"],
+      [/\b(cabeza y cuello|orofaringe|laringe|faringe)\b/, "CÁNCER DE CABEZA Y CUELLO"],
+      [/\b(esofago|esofagico|esofagica)\b/, "CÁNCER DE ESÓFAGO"],
+      [/\b(testiculo|testicular)\b/, "CÁNCER TESTICULAR"],
+      [/\b(cerebro|cerebral|encefalo)\b/, "CÁNCER CEREBRAL"]
+    ];
+    const encontrados = sitios.filter(([patron]) => patron.test(texto));
+    if (encontrados.length === 2 && /\b(cuello uterino|cervico uterino)\b/.test(texto) &&
+        encontrados.some(([, nombre]) => nombre === "CÁNCER CERVICOUTERINO") &&
+        encontrados.some(([, nombre]) => nombre === "CÁNCER DE ÚTERO")) return "CÁNCER CERVICOUTERINO";
+    if (encontrados.length === 1) return encontrados[0][1];
+    if (encontrados.length > 1) return original;
+  }
+
+  if (/\bleucemia\b/.test(texto)) return "LEUCEMIA";
+  if (/\blinfoma\b/.test(texto)) return "LINFOMA";
+  if (/\bmieloma\b/.test(texto)) return "MIELOMA MÚLTIPLE";
+  if (/\bmelanoma\b/.test(texto)) return "MELANOMA";
+  if (/\bneuritis\s*optica\s+recurrente\b/.test(texto)) return "NEURITIS ÓPTICA RECURRENTE";
+
+  // Equivalencias frecuentes fuera de oncología; las demás enfermedades solo
+  // se unifican por tildes, puntuación y espacios para evitar falsos grupos.
+  if (/\b(dm2|diabetes mellitus tipo 2|diabetes tipo 2)\b/.test(texto)) return "DIABETES MELLITUS TIPO 2";
+  if (/\b(dm1|diabetes mellitus tipo 1|diabetes tipo 1)\b/.test(texto)) return "DIABETES MELLITUS TIPO 1";
+  if (/\b(erc|enfermedad renal cronica|insuficiencia renal cronica)\b/.test(texto)) return "ENFERMEDAD RENAL CRÓNICA";
+
+  return texto.toUpperCase();
+}
+
+function homologarMedico(valor) {
+  const original = apartadoValorCelda(valor);
+  if (original === "SIN DATO") return original;
+  // Solo se juntan nombres completos que coinciden tras retirar tratamientos,
+  // tildes, signos y espacios. Una inicial o apellido faltante no basta.
+  const nombre = normalizarTexto(original)
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ").trim()
+    .replace(/^(?:dr|dra|dr a|doctor|doctora|medico|medica|m c)\s+/, "");
+  return nombre.toUpperCase() || "SIN DATO";
+}
+
 function apartadoFormatoNumero(valor, campo) {
   if (valor === null || valor === undefined || isNaN(valor)) return "—";
   if (campo.moneda) return formatearMoneda(valor);
@@ -268,10 +328,44 @@ function apartadoFormatoNumero(valor, campo) {
 function distribucionCategorica(rows, key) {
   const mapa = new Map();
   rows.forEach(r => {
-    const val = apartadoValorCelda(r[key]);
+    const val = key === "diagnostico" ? homologarDiagnostico(r[key])
+      : key === "medicos" ? homologarMedico(r[key]) : apartadoValorCelda(r[key]);
     mapa.set(val, (mapa.get(val) || 0) + 1);
   });
   return Array.from(mapa.entries()).sort((a, b) => b[1] - a[1]);
+}
+
+function clavePaciente(valor) {
+  return normalizarTexto(valor).replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function pacientesPorMedico(rows) {
+  const mapa = new Map();
+  rows.forEach(r => {
+    const medico = homologarMedico(r.medicos);
+    if (!mapa.has(medico)) mapa.set(medico, new Set());
+    const paciente = clavePaciente(r.paciente);
+    if (paciente) mapa.get(medico).add(paciente);
+  });
+  return mapa;
+}
+
+function montosPorDiagnostico(rows) {
+  const mapa = new Map();
+  rows.forEach(r => {
+    const grupo = homologarDiagnostico(r.diagnostico);
+    if (!mapa.has(grupo)) mapa.set(grupo, { montoTotal: 0, registrosConMonto: 0, pacientes: new Set() });
+    const resumen = mapa.get(grupo);
+    const paciente = clavePaciente(r.paciente);
+    if (paciente) resumen.pacientes.add(paciente);
+    const bruto = r.montoServicio;
+    if (bruto === null || bruto === undefined || String(bruto).trim() === "") return;
+    const monto = Number(bruto);
+    if (!Number.isFinite(monto)) return;
+    resumen.montoTotal += monto;
+    resumen.registrosConMonto++;
+  });
+  return mapa;
 }
 
 function estadisticasNumericas(rows, key) {
@@ -426,19 +520,36 @@ function renderDetalleApartado() {
     let dist = distribucionCategorica(rows, campo.key);
     const totalReg = dist.reduce((s, [, c]) => s + c, 0);
     mostrarBuscador = dist.length > UMBRAL_GRAFICA_BARRAS;
+    const variantes = new Map();
+    const montos = campo.key === "diagnostico" ? montosPorDiagnostico(rows) : null;
+    const pacientesMedico = campo.key === "medicos" ? pacientesPorMedico(rows) : null;
+    if (campo.key === "diagnostico" || campo.key === "medicos") {
+      rows.forEach(r => {
+        const grupo = campo.key === "diagnostico" ? homologarDiagnostico(r.diagnostico) : homologarMedico(r.medicos);
+        if (!variantes.has(grupo)) variantes.set(grupo, new Map());
+        const original = apartadoValorCelda(r[campo.key]);
+        const mapa = variantes.get(grupo);
+        mapa.set(original, (mapa.get(original) || 0) + 1);
+      });
+    }
 
     if (apartadoDetBuscarTexto) {
       const q = normalizarTexto(apartadoDetBuscarTexto);
-      dist = dist.filter(([v]) => normalizarTexto(v).includes(q));
+      dist = dist.filter(([v]) => normalizarTexto(v).includes(q) ||
+        (variantes.get(v) && Array.from(variantes.get(v).keys()).some(original => normalizarTexto(original).includes(q))));
     }
 
     subtitulo = `${totalReg} registro(s) analizado(s) · ${dist.length} valor(es) distinto(s)${apartadoDetBuscarTexto ? " (filtrado)" : ""}`;
+
+    const notaMontos = campo.key === "diagnostico"
+      ? `<p class="muted apartado-tabla-nota">Pacientes únicos por diagnóstico. El ticket promedio se calcula como monto total del servicio ÷ registros con monto.</p>`
+      : "";
 
     if (!dist.length) {
       bodyHtml = `<p class="muted">Sin resultados para ese filtro.</p>`;
     } else if (dist.length <= UMBRAL_GRAFICA_BARRAS) {
       const maxC = dist[0][1];
-      bodyHtml = `
+      bodyHtml = `${notaMontos}
         <div class="apartado-bars">
           ${dist.map(([val, count], i) => `
             <div class="apartado-bar-row">
@@ -448,11 +559,19 @@ function renderDetalleApartado() {
             </div>`).join("")}
         </div>`;
     } else {
-      bodyHtml = `<p class="muted apartado-tabla-nota">Este apartado tiene muchos valores distintos: se muestra como tabla clasificada por frecuencia (usa el buscador para filtrar).</p>`;
+      bodyHtml = `${notaMontos}<p class="muted apartado-tabla-nota">Este apartado tiene muchos valores distintos: se muestra como tabla clasificada por frecuencia (usa el buscador para filtrar).</p>`;
     }
 
-    tablaHeadHtml = `<thead><tr><th>${escapeHtml(campo.label)}</th><th>Registros</th><th>%</th></tr></thead>`;
-    tablaFilasHtml = dist.map(([val, count]) => `<tr><td>${escapeHtml(val)}</td><td>${count}</td><td>${totalReg ? Math.round((count / totalReg) * 100) : 0}%</td></tr>`).join("");
+    tablaHeadHtml = `<thead><tr><th>${escapeHtml(campo.label)}</th><th>Registros</th>${campo.key === "diagnostico" || campo.key === "medicos" ? "<th>Pacientes</th>" : ""}<th>%</th>${campo.key === "diagnostico" ? "<th>Con monto</th><th>Monto total del servicio</th><th>Ticket promedio</th>" : ""}</tr></thead>`;
+    tablaFilasHtml = dist.map(([val, count]) => {
+      const resumen = montos && montos.get(val);
+      const montoHtml = resumen
+        ? `<td>${resumen.registrosConMonto}</td><td>${resumen.registrosConMonto ? formatearMoneda(resumen.montoTotal) : "—"}</td><td>${resumen.registrosConMonto ? formatearMoneda(resumen.montoTotal / resumen.registrosConMonto) : "—"}</td>`
+        : "";
+      const pacientesHtml = resumen ? `<td>${resumen.pacientes.size}</td>`
+        : pacientesMedico ? `<td>${(pacientesMedico.get(val) || new Set()).size}</td>` : "";
+      return `<tr><td>${escapeHtml(val)}</td><td>${count}</td>${pacientesHtml}<td>${totalReg ? Math.round((count / totalReg) * 100) : 0}%</td>${montoHtml}</tr>`;
+    }).join("");
   }
 
   cont.innerHTML = `
@@ -539,420 +658,3 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 window.renderExecutiveDashboard = renderExecutiveDashboard;
-
-
-// ============================================================
-// UTILIDAD POR SEDE - cruza paciente SAI con cotizaciones INNVIDA
-// ============================================================
-let _costosCache = null;
-
-async function calcularUtilidadGlobal(rowsConMontoTodas) {
-  try {
-    // 1. Cargar catalogo de costos
-    if (!_costosCache) {
-      if (window.COSTOS_DATA) {
-        _costosCache = window.COSTOS_DATA;
-      } else {
-        const resp = await fetch('../assets/costos.json');
-        if (!resp.ok) throw new Error('No se pudo cargar costos.json');
-        _costosCache = await resp.json();
-      }
-    }
-
-    const catalogo = _costosCache['catalogo'] || [];
-
-    // Solo filas con costo numerico real
-    const catalogoFiltrado = catalogo.filter(function(row) {
-      var costo = parseFloat(row['__EMPTY_2']);
-      return !isNaN(costo) && costo > 0;
-    });
-
-    // Normaliza texto: sin acentos, minusculas, sin puntuacion ni espacios extra
-    function norm(s) {
-      return String(s || '').toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9 ]/g, ' ')
-        .replace(/\s+/g, ' ').trim();
-    }
-
-    function cleanNum(v) {
-      if (typeof v === 'number') return v;
-      if (!v) return 0;
-      var p = parseFloat(String(v).replace(/[^0-9.-]+/g, ''));
-      return isNaN(p) ? 0 : p;
-    }
-
-    // Busca el costo unitario real en el catalogo con discriminacion de dosis/presentacion
-    function buscarCostoItem(nombreCompleto, pa) {
-      var n = norm(nombreCompleto);
-      var p = norm(pa);
-      if (!n && !p) return 0;
-
-      var isNab = n.includes('nab') || p.includes('nab');
-      var targetWords = (n + ' ' + p).split(' ').filter(function(w) { return w.length > 2; });
-
-      var bestCost = 0;
-      var bestScore = 0;
-
-      for (var i = 0; i < catalogoFiltrado.length; i++) {
-        var c = catalogoFiltrado[i];
-        var desc = norm(c['__EMPTY_1'] || '');
-        if (!desc) continue;
-
-        // Evitar confusion critica entre Nab-paclitaxel ($25k) y Paclitaxel estandar ($1k)
-        var descIsNab = desc.includes('nab');
-        if (isNab !== descIsNab) continue;
-
-        var cost = parseFloat(c['__EMPTY_2']) || 0;
-        if (cost <= 0) continue;
-
-        // Si la descripcion tiene especificacion de dosis (ej. 30mg, 100mg, 300mg, 500mg), dar prioridad
-        var mgMatch = n.match(/(\d+)\s*(mg|g|ml)/);
-        var descMgMatch = desc.match(/(\d+)\s*(mg|g|ml)/);
-        var mgBonus = 0;
-        if (mgMatch && descMgMatch && mgMatch[1] === descMgMatch[1] && mgMatch[2] === descMgMatch[2]) {
-          mgBonus = 5;
-        }
-
-        var descWords = desc.split(' ').filter(function(w) { return w.length > 2; });
-        var matches = 0;
-        for (var w = 0; w < targetWords.length; w++) {
-          if (descWords.includes(targetWords[w])) matches++;
-        }
-
-        var totalScore = matches + mgBonus;
-        if (totalScore > bestScore && matches >= 1) {
-          bestScore = totalScore;
-          bestCost = cost;
-        } else if (totalScore === bestScore && totalScore > 0 && cost < bestCost) {
-          // Si hay duplicados con precio de venta inflado, preferir el costo de compra real
-          bestCost = cost;
-        }
-      }
-
-      return bestCost;
-    }
-
-    // 2. Obtener cotizaciones del panel padre (enviadas via postMessage)
-    var todasCotizaciones = window.cotizacionesDesdePadre || [];
-
-    // Mapa de nombre-normalizado -> lista de cotizaciones para busqueda rapida
-    var cotizacionesPorNombre = {};
-    todasCotizaciones.forEach(function(c) {
-      var p = norm(c.paciente || c.PACIENTE || c.nombrePaciente || '');
-      if (!p) return;
-      if (!cotizacionesPorNombre[p]) cotizacionesPorNombre[p] = [];
-      cotizacionesPorNombre[p].push(c);
-    });
-
-    var matchCount = 0;
-    var noMatchCount = 0;
-    var utilidadTotal = 0;
-    var utilidadPorSede = {};
-    
-    // Matriz para exportar Excel/CSV de justificacion
-    var reporteCsvData = [
-      ["Paciente", "Sede", "Monto Servicio", "Costo Medicamentos", "Costo Servicios", "Costo Total Calculado", "Utilidad (Monto - Costo)", "Margen %", "Detalle Medicamentos", "Detalle Servicios", "Cotizacion Encontrada"]
-    ];
-
-    function extraeNombre(item) {
-      var subObj = item.bio || item.innovador || item.patente || item.generico || {};
-      var n = subObj.DESCRIPCION || subObj.descripcion || subObj['NOMBRE COMERCIAL'] || subObj.nombre ||
-              item.descripcion || item.nombre || item.concepto || item.ESQUEMA || item.esquema ||
-              item.pa || subObj.PA || item.servicio || '';
-      return String(n).trim();
-    }
-
-    // 3. Para cada registro del SAI, buscar su cotizacion y calcular utilidad
-    rowsConMontoTodas.forEach(function(row) {
-      var nomPac = norm(row.paciente);
-      if (!nomPac) return;
-
-      var montoServicio = parseFloat(row.montoServicio) || 0;
-      if (!montoServicio) return;
-
-      var sede = row.sede || 'Sin Sede';
-
-      // Normalizacion de alias y typos conocidos entre SAI y Cotizaciones
-      var nomBuscado = nomPac;
-      if (nomBuscado === 'isidro sanchez rodrguez') nomBuscado = 'isidro sanchez rodriguez';
-      if (nomBuscado.includes('osorno michel')) nomBuscado = 'ma del campo osorno';
-
-      var matches = nomBuscado ? (cotizacionesPorNombre[nomBuscado] || []) : [];
-
-      if (nomBuscado && !matches.length) {
-        var parts = nomBuscado.split(' ').filter(function(p) { return p.length > 2; });
-        if (parts.length >= 2) {
-          var keys = Object.keys(cotizacionesPorNombre);
-          for (var ki = 0; ki < keys.length; ki++) {
-            var key = keys[ki];
-            var matched = parts.every(function(p) { return key.includes(p); }) ||
-                          key.split(' ').filter(function(p){ return p.length > 2; }).every(function(p) { return nomBuscado.includes(p); });
-            if (matched) {
-              matches = cotizacionesPorNombre[key];
-              break;
-            }
-          }
-        }
-      }
-
-      // Si hay varias cotizaciones del paciente, elegir la que mejor se ajuste al monto facturado en la sesion
-      var quote = null;
-      if (matches.length > 0) {
-        var matchesSorted = matches.slice().sort(function(a, b) {
-          var totA = cleanNum(a.total);
-          var totB = cleanNum(b.total);
-          return Math.abs(totA - montoServicio) - Math.abs(totB - montoServicio);
-        });
-        quote = matchesSorted[0];
-      }
-
-      var conceptos = [];
-      if (quote) {
-        if (quote.state && Array.isArray(quote.state.items) && quote.state.items.length > 0) {
-          // Cotizador 3.0
-          quote.state.items.forEach(function(item) {
-            var nombre = extraeNombre(item);
-            var pa = item.pa || (item.bio && item.bio.PA) || '';
-            var qty = cleanNum(item.qty || item.cant || item.cantidad || 1);
-            var subObj = item.innovador || item.patente || item.generico || item.bio || item;
-            var precioVenta = cleanNum(subObj.BOLSILLO || subObj.bolsillo || item.BOLSILLO || item.bolsillo || 0);
-            var tipo = (item.type === 'med' || pa || item.bio) ? 'med' : 'serv';
-            conceptos.push({ nombre: nombre, pa: pa, qty: qty, precioVenta: precioVenta, tipo: tipo });
-          });
-        } else if ((Array.isArray(quote.servicios) && quote.servicios.length > 0) || 
-                   (Array.isArray(quote.medicamentos) && quote.medicamentos.length > 0)) {
-          // Sanaré
-          (quote.servicios || []).forEach(function(item) {
-            var nombre = extraeNombre(item) || item.prueba || '';
-            var qty = cleanNum(item.cantidad || item.cant || 1);
-            var precioVenta = cleanNum(item.subtotal || item.total || item.precio || 0);
-            conceptos.push({ nombre: nombre, pa: '', qty: qty, precioVenta: precioVenta, tipo: 'serv' });
-          });
-          (quote.medicamentos || []).forEach(function(item) {
-            var nombre = extraeNombre(item);
-            var qty = cleanNum(item.cantidad || item.cant || 1);
-            var precioVenta = cleanNum(item.subtotal || item.total || item.precio || 0);
-            conceptos.push({ nombre: nombre, pa: '', qty: qty, precioVenta: precioVenta, tipo: 'med' });
-          });
-        } else if (Array.isArray(quote.items) && quote.items.length > 0) {
-          // Formato genérico
-          quote.items.forEach(function(item) {
-            var nombre = extraeNombre(item);
-            var qty = cleanNum(item.cantidad || item.qty || item.cant || 1);
-            var precioVenta = cleanNum(item.subtotal || item.precio || item.total || 0);
-            var tipo = (item.type === 'med' || item.pa || nombre.toLowerCase().includes('mg') || nombre.toLowerCase().includes('ml')) ? 'med' : 'serv';
-            conceptos.push({ nombre: nombre, pa: item.pa || '', qty: qty, precioVenta: precioVenta, tipo: tipo });
-          });
-        }
-      }
-
-      var costoMeds = 0;
-      var costoServs = 0;
-      var descMeds = [];
-      var descServs = [];
-      
-      if (conceptos.length > 0) {
-        conceptos.forEach(function(c) {
-          var costoCatalogo = buscarCostoItem(c.nombre, c.pa);
-          var costoFila = costoCatalogo * c.qty;
-          var detalleText = c.nombre + ' | Costo: $' + costoCatalogo.toFixed(2) + ' x ' + c.qty;
-          
-          if (c.tipo === 'med') {
-            costoMeds += costoFila;
-            if (costoFila > 0) descMeds.push(detalleText);
-          } else {
-            costoServs += costoFila;
-            if (costoFila > 0) descServs.push(detalleText);
-          }
-        });
-      }
-
-      var costoRealTotal = costoMeds + costoServs;
-
-      // Si la cotización encontrada era para un paquete multiciclo/tratamiento completo (quoteTotal >> montoServicio),
-      // prorratear el costo a la proporción de la sesión facturada
-      var quoteTotal = quote ? cleanNum(quote.total) : 0;
-      if (quoteTotal > 0 && quoteTotal > montoServicio * 1.5 && costoRealTotal > 0) {
-        var ratio = montoServicio / quoteTotal;
-        costoRealTotal = costoRealTotal * ratio;
-        costoMeds = costoMeds * ratio;
-        costoServs = costoServs * ratio;
-      }
-
-      // Reglas de consistencia comercial y fallback
-      var utilRow = 0;
-      var tipoCruce = "SI";
-
-      if (quote && costoRealTotal > 0 && costoRealTotal < montoServicio) {
-        // Coincidencia con costo congruente
-        utilRow = montoServicio - costoRealTotal;
-        tipoCruce = "SI";
-      } else if (quote && costoRealTotal >= montoServicio) {
-        // Si el costo calculado excede la venta por discrepancia de presentación, aplicar margen operativo saludable (25%)
-        costoRealTotal = montoServicio * 0.75;
-        utilRow = montoServicio - costoRealTotal;
-        tipoCruce = "SI (Ajustado por tope comercial 25%)";
-        descServs.push("Costo ajustado por tope comercial (costo cotizado excedía venta)");
-      } else {
-        // Sin cotización encontrada o costo 0 en catálogo: aplicar margen operativo base 35%
-        costoRealTotal = montoServicio * 0.65;
-        utilRow = montoServicio - costoRealTotal;
-        tipoCruce = "NO (Estimado con Margen Base 35%)";
-        descServs.push("Sin cotización previa: Margen operativo estándar 35%");
-      }
-
-      utilidadTotal += utilRow;
-      utilidadPorSede[sede] = (utilidadPorSede[sede] || 0) + utilRow;
-      if (tipoCruce.startsWith("SI")) matchCount++; else noMatchCount++;
-
-      var pctMargen = montoServicio > 0 ? ((utilRow / montoServicio) * 100).toFixed(1) + "%" : "0%";
-
-      reporteCsvData.push([
-        row.paciente, 
-        sede, 
-        montoServicio.toFixed(2), 
-        costoMeds.toFixed(2),
-        costoServs.toFixed(2),
-        costoRealTotal.toFixed(2), 
-        utilRow.toFixed(2), 
-        pctMargen,
-        descMeds.join(" || ") || "Ninguno", 
-        descServs.join(" || ") || "Ninguno", 
-        tipoCruce
-      ]);
-    });
-
-    // Crear contenido CSV
-    var csvContent = reporteCsvData.map(function(e) { return e.map(function(cel) { return '"' + String(cel).replace(/"/g, '""') + '"'; }).join(","); }).join("\n");
-    // Crear un Blob y generar un Data URL
-    var blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
-    var csvUrl = URL.createObjectURL(blob);
-
-    // 4. Actualizar el DOM
-    var totalEl = document.getElementById('execUtilidadTotal');
-    var sedesEl = document.getElementById('execUtilidadSedes');
-
-    // Respetar filtro de sede activo en el DOM si existe
-    var filtroSedeEl = document.getElementById("filtroSede");
-    var sedeSeleccionada = filtroSedeEl ? filtroSedeEl.value : "";
-    var totalAMostrar = sedeSeleccionada ? (utilidadPorSede[sedeSeleccionada] || 0) : utilidadTotal;
-
-    if (totalEl) {
-      totalEl.textContent = formatearMoneda(totalAMostrar);
-      totalEl.style.color = totalAMostrar >= 0 ? '#22c55e' : '#ef4444';
-      
-      // Inyectar el boton de descarga junto al titulo
-      var parentArticle = totalEl.closest('article');
-      if (parentArticle) {
-        var existingBtn = parentArticle.querySelector('#btnDescargarUtilidad');
-        if (existingBtn) existingBtn.remove();
-        
-        var btnHTML = '<a id="btnDescargarUtilidad" href="' + csvUrl + '" download="Justificacion_Utilidad.csv" style="display:block; margin-top:8px; font-size:12px; color:#3b82f6; text-decoration:underline; cursor:pointer;">📥 Descargar reporte de cálculo</a>';
-        totalEl.insertAdjacentHTML('afterend', btnHTML);
-      }
-    }
-    if (sedesEl) {
-      if (todasCotizaciones.length === 0) {
-        sedesEl.textContent = 'Panel INNVIDA sin datos aun (recarga en unos segundos)';
-        sedesEl.style.color = '#f59e0b';
-      } else {
-        var sedesEntries = Object.entries(utilidadPorSede)
-          .filter(function(pair) { return pair[1] !== 0; })
-          .sort(function(a, b) { return b[1] - a[1]; });
-
-        if (sedesEntries.length > 0) {
-          sedesEl.textContent = sedesEntries.map(function(pair) {
-            return pair[0] + ': ' + formatearMoneda(pair[1]);
-          }).join(' | ');
-          sedesEl.style.color = '';
-        } else if (matchCount === 0) {
-          sedesEl.textContent = 'Sin coincidencias de pacientes (' + todasCotizaciones.length + ' cotizaciones cargadas)';
-          sedesEl.style.color = '#f59e0b';
-        } else {
-          sedesEl.textContent = matchCount + ' pacientes cruzados, costo no encontrado en catalogo';
-          sedesEl.style.color = '#f59e0b';
-        }
-      }
-    }
-
-    console.log('[Utilidad] Cotizaciones cargadas:', todasCotizaciones.length, '| Matches:', matchCount, '| Sin match:', noMatchCount);
-
-  } catch (err) {
-    console.error('[Utilidad] Error:', err);
-    var el = document.getElementById('execUtilidadSedes');
-    if (el) el.textContent = 'Error: ' + err.message;
-  }
-}
-
-// Listener para recibir datos de cotizaciones del padre (resuelve CORS en local)
-window.cotizacionesDesdePadre = [];
-
-function publicarResumenSAI() {
-  if (!window.saiResumenActual || !window.parent || window.parent === window) return;
-  window.parent.postMessage({
-    type: 'SAI_UPDATE',
-    payload: window.saiResumenActual
-  }, '*');
-}
-
-window.addEventListener('message', function(e) {
-  if (e.data && e.data.type === 'INNVIDA_COTIZACIONES') {
-    console.log('[Utilidad] Recibidas cotizaciones del padre:', e.data.cotizaciones.length);
-    window.cotizacionesDesdePadre = e.data.cotizaciones || [];
-    if (typeof execUltimaData !== 'undefined' && execUltimaData && execUltimaData.length > 0) {
-      const rowsConMontoTodas = execUltimaData.filter(r => r.montoServicio !== null && r.montoServicio !== undefined && r.montoServicio !== "");
-      calcularUtilidadGlobal(rowsConMontoTodas);
-    }
-  } else if (e.data && e.data.type === 'PANEL_FILTRO_MES') {
-    // Sincronizar el mes seleccionado en el Resumen Directivo del padre con SAI
-    let y, m;
-    const mesRecibido = e.data.mes || 'all';
-    
-    if (mesRecibido === 'all') {
-      const inicioEl = document.getElementById("filtroFechaInicio");
-      const finEl = document.getElementById("filtroFechaFin");
-      if (inicioEl && finEl) {
-        inicioEl.value = "";
-        finEl.value = "";
-        if (typeof applyFilters === 'function') applyFilters();
-      }
-      return;
-    } else {
-      const partes = mesRecibido.split('-');
-      y = parseInt(partes[0], 10);
-      m = parseInt(partes[1], 10) - 1; // 0-based
-    }
-    
-    // Calcular primero y último día del mes
-    const primerDia = new Date(y, m, 1);
-    const ultimoDia = new Date(y, m + 1, 0);
-    
-    const formatISO = (d) => {
-      const yStr = d.getFullYear();
-      const mStr = String(d.getMonth() + 1).padStart(2, '0');
-      const dStr = String(d.getDate()).padStart(2, '0');
-      return `${yStr}-${mStr}-${dStr}`;
-    };
-
-    const inicioEl = document.getElementById("filtroFechaInicio");
-    const finEl = document.getElementById("filtroFechaFin");
-    
-    if (inicioEl && finEl) {
-      inicioEl.value = formatISO(primerDia);
-      finEl.value = formatISO(ultimoDia);
-      
-      // Forzar el filtrado para recalcular SAI y enviar el total al padre
-      if (typeof applyFilters === 'function') {
-        applyFilters();
-      }
-    }
-  } else if (e.data && e.data.type === 'SOLICITAR_SAI_UPDATE') {
-    publicarResumenSAI();
-  }
-});
-
-// Avisar al padre que el iframe ya esta listo (para que mande la data si ya la habia cargado)
-window.parent.postMessage({ type: 'SAI_READY' }, '*');
-
-
