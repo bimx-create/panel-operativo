@@ -2,6 +2,7 @@
 // 1) ESTADO — los datos reales se cargan desde Supabase
 // ============================================================
 const SEDES = ["", "Morelia", "Toluca", "Narvarte", "Tijuana", "Santa Fe"];
+let allRows = [];
 
 function calcularTotal(subtotal, iva) {
   const sub = Number(subtotal) || 0;
@@ -510,6 +511,7 @@ async function cargarRegistros() {
         (b.fechaInfusion || "").localeCompare(a.fechaInfusion || "")
       );
 
+    if (typeof publicarResumenSAI === "function") publicarResumenSAI();
     applyFilters();
 
     $("ultimaActualizacion").textContent =

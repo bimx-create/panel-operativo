@@ -2,6 +2,37 @@
 // Dashboard ejecutivo (SOLO ADMIN)
 // ============================================================
 let execUltimaData = null;
+let mesResumenSAI = (() => {
+  const hoy = new Date();
+  return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`;
+})();
+
+function publicarResumenSAI() {
+  if (window.parent === window || typeof allRows === "undefined") return;
+  const meses = [...new Set(allRows.map(r => claveMes(r.fechaInfusion)).filter(Boolean))].sort();
+  const rowsMes = allRows.filter(r => mesResumenSAI === "all" || claveMes(r.fechaInfusion) === mesResumenSAI);
+  const facturados = rowsMes.filter(r => r.montoServicio !== null && r.montoServicio !== undefined && r.montoServicio !== "");
+  const montoTotal = facturados.reduce((total, r) => total + (Number(r.montoServicio) || 0), 0);
+  const meta = 4000000;
+  window.parent.postMessage({ type: "SAI_MESES_DISPONIBLES", meses }, "*");
+  window.parent.postMessage({
+    type: "SAI_UPDATE",
+    payload: { montoTotal, meta, pctAvance: montoTotal / meta * 100,
+      faltante: Math.max(0, meta - montoTotal), conteo: facturados.length }
+  }, "*");
+}
+
+window.addEventListener("message", event => {
+  if (event.source !== window.parent || !event.data) return;
+  if (event.data.type === "PANEL_FILTRO_MES") {
+    if (event.data.mes === "all" || /^\d{4}-\d{2}$/.test(event.data.mes)) {
+      mesResumenSAI = event.data.mes;
+      publicarResumenSAI();
+    }
+  } else if (event.data.type === "SOLICITAR_SAI_UPDATE") {
+    publicarResumenSAI();
+  }
+});
 
 function obtenerColoresTema() {
   const estilos = getComputedStyle(document.documentElement);
@@ -111,26 +142,16 @@ function renderExecutiveDashboard(rows) {
     $("execSedeLiderMonto").textContent = "$0";
   }
 
-  // ---- Tendencia mensual (mes actual vs anterior) ----
-  const porMes = agruparSumaPorClave(rowsConMonto, r => claveMes(r.fechaInfusion));
-  const mesesOrdenados = Array.from(porMes.keys()).sort();
-  const valoresMes = mesesOrdenados.map(m => porMes.get(m));
-
-  const cardCrecimiento = $("execCrecimiento");
-  const detalleCrecimiento = $("execCrecimientoDetalle");
-  if (mesesOrdenados.length >= 2) {
-    const actual = valoresMes[valoresMes.length - 1];
-    const anterior = valoresMes[valoresMes.length - 2];
-    const cambio = anterior > 0 ? ((actual - anterior) / anterior) * 100 : (actual > 0 ? 100 : 0);
-    const signo = cambio >= 0 ? "+" : "";
-    cardCrecimiento.textContent = `${signo}${cambio.toFixed(1)}%`;
-    cardCrecimiento.style.color = cambio >= 0 ? "#37d39a" : "#ff6b81";
-    detalleCrecimiento.textContent = `${nombreMes(mesesOrdenados[mesesOrdenados.length - 1])} vs ${nombreMes(mesesOrdenados[mesesOrdenados.length - 2])}`;
-  } else {
-    cardCrecimiento.textContent = "—";
-    cardCrecimiento.style.color = "";
-    detalleCrecimiento.textContent = "Sin datos suficientes";
-  }
+  // ---- Meta mensual ----
+  const meta = 4000000;
+  const pctAvance = montoTotal / meta * 100;
+  $("execMetaAvance").textContent = `${pctAvance.toFixed(1)}%`;
+  $("execMetaAvance").style.color = pctAvance >= 100 ? "#37d39a" : pctAvance >= 50 ? "#f59e0b" : "#38bdf8";
+  $("execMetaDetalle").textContent = montoTotal < meta
+    ? `Faltan ${formatearMoneda(meta - montoTotal)} para la meta`
+    : `¡Meta superada por ${formatearMoneda(montoTotal - meta)}!`;
+  $("execMetaBar").style.width = `${Math.min(100, pctAvance)}%`;
+  $("execMetaBar").style.background = $("execMetaAvance").style.color;
 
   // ---- Origen del pago: aseguradora vs pago de bolsillo ----
   const montoBolsillo = rowsConMonto
@@ -159,22 +180,10 @@ function renderExecutiveDashboard(rows) {
   // ---- Retención: pacientes nuevos vs recurrentes ----
   const nuevos = rowsConMonto.filter(r => esPacienteNuevo(r.primeraVez));
   const recurrentes = rowsConMonto.filter(r => !esPacienteNuevo(r.primeraVez));
-  const pctRecurrentes = rowsConMonto.length ? (recurrentes.length / rowsConMonto.length) * 100 : 0;
-  if ($("execRetencionPct")) {
-    if (rowsConMonto.length) {
-      const mayorEsRecurrente = recurrentes.length >= nuevos.length;
-      const pctMayor = mayorEsRecurrente ? pctRecurrentes : (100 - pctRecurrentes);
-      const pctMenor = mayorEsRecurrente ? (100 - pctRecurrentes) : pctRecurrentes;
-      const etiquetaMayor = mayorEsRecurrente ? "recurrentes" : "de primera vez";
-      const etiquetaMenor = mayorEsRecurrente ? "de primera vez" : "recurrentes";
-
-      $("execRetencionPct").textContent = `${pctMayor.toFixed(0)}% ${etiquetaMayor}`;
-      $("execRetencionDetalle").textContent = `${pctMenor.toFixed(0)}% ${etiquetaMenor}`;
-    } else {
-      $("execRetencionPct").textContent = "—";
-      $("execRetencionDetalle").textContent = "Sin datos suficientes";
-    }
-  }
+  $("execNuevosVol").textContent = String(nuevos.length);
+  $("execNuevosMonto").textContent = formatearMoneda(nuevos.reduce((a, r) => a + (Number(r.montoServicio) || 0), 0));
+  $("execRecurrentesVol").textContent = String(recurrentes.length);
+  $("execRecurrentesMonto").textContent = formatearMoneda(recurrentes.reduce((a, r) => a + (Number(r.montoServicio) || 0), 0));
 
   // ---- Ticket promedio por sede (siempre todas las sedes, para comparar) ----
   const conteoPorSede = new Map();
@@ -640,6 +649,7 @@ function initDashboardInteractivoEventos() {
 document.addEventListener("DOMContentLoaded", () => {
   initExecTabs();
   initDashboardInteractivoEventos();
+  if (window.parent !== window) window.parent.postMessage({ type: "SAI_READY" }, "*");
 });
 
 // Vuelve a pintar el dashboard interactivo con la paleta correcta al cambiar de tema
