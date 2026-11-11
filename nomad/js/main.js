@@ -534,12 +534,11 @@ function actualizarTotales(filas) {
       });
 
       const montoPorCierre = cerradasPorCierre.reduce((acc, r) => acc + (r.total || 0), 0);
-      const montoPorCierre_SinIva = montoPorCierre / 1.16; // Precio base sin IVA (16%)
 
       window.parent.postMessage({
         type: 'NOMAD_UPDATE',
         payload: {
-          cerradasMonto: montoPorCierre_SinIva,
+          cerradasMonto: montoPorCierre,
           cerradasCount: cerradasPorCierre.length
         }
       }, '*');
