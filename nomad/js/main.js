@@ -132,6 +132,17 @@ window.addEventListener('message', function(e) {
       }
     }
 
+    // Sincronizar también el filtro de fechas de Romarico con el mes del panel
+    const filtroRomInicio = document.getElementById("filtroRomaricoFechaInicio");
+    const filtroRomFin    = document.getElementById("filtroRomaricoFechaFin");
+    if (filtroRomInicio && filtroRomFin) {
+      filtroRomInicio.value = formatISO(primerDia);
+      filtroRomFin.value    = formatISO(ultimoDia);
+      if (typeof aplicarFiltrosRomarico === 'function') {
+        aplicarFiltrosRomarico();
+      }
+    }
+
     // Recalcular y re-enviar el total al panel con el mes correcto
     actualizarTotales(allRows);
   }
@@ -997,10 +1008,10 @@ function initRomarico() {
   const ultimoDia = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
   
   if (filtroRomaricoFechaInicio) {
-    filtroRomaricoFechaInicio.value = primerDia.toISOString().split("T")[0];
+    filtroRomaricoFechaInicio.value = formatLocalISO(primerDia);
   }
   if (filtroRomaricoFechaFin) {
-    filtroRomaricoFechaFin.value = ultimoDia.toISOString().split("T")[0];
+    filtroRomaricoFechaFin.value = formatLocalISO(ultimoDia);
   }
 
   if (btnLimpiarFiltrosRomarico)
@@ -1069,33 +1080,55 @@ function normalizarNombre(nombre) {
     .trim();
 }
 
-// ── Helper: un registro está completo/cerrado ──
-// Condición: col H (notas/SEGUIMIENTO) indica estado de completado
-//            Y además tiene FECHA DE ENVIO registrada en col B
-function esCompletadoRow(r) {
-  // Debe tener FECHA DE ENVIO registrada (col B no vacía ni "Pendiente")
-  const tieneEnvio = r.fechaEnvio && r.fechaEnvio.trim() !== "" &&
-                     r.fechaEnvio.trim().toLowerCase() !== "pendiente";
+// ── Helper: obtener la fecha representativa para el registro de Romarico ──
+// Regla: siempre emparejar la fecha del mes en turno con la fecha de cierre o entrega (col B: fechaEnvio) si existe,
+// con fallback a fecha de solicitud (col A: fecha)
+function obtenerFechaFilaRomarico(r) {
+  if (!r) return null;
+  const fEnvio = r.fechaEnvio && r.fechaEnvio.trim() !== "" && r.fechaEnvio.trim().toLowerCase() !== "pendiente" ? r.fechaEnvio.trim() : null;
+  const fSol = r.fecha && r.fecha.trim() !== "" && r.fecha.trim().toLowerCase() !== "pendiente" ? r.fecha.trim() : null;
+  return fEnvio || fSol;
+}
 
-  const checkStr = (s) => {
+// ── Helper: un registro está completo/cerrado ──
+// Regla: con solo poner "YA SE ENTREGARON RESULTADOS" (o variantes de entrega de resultados) ya cuenta como sumatoria de pruebas
+function esCompletadoRow(r) {
+  if (!r) return false;
+
+  const checkEntrega = (s) => {
+    const t = (s || "").toUpperCase();
+    return t.includes("ENTREGARON RESULT") ||
+           t.includes("ENTREGA DE RESULTADOS") ||
+           t.includes("RESULTADOS ENTREGADOS") ||
+           t.includes("ENTREGAN RESULTADOS") ||
+           t.includes("YA SE ENTREGARON");
+  };
+
+  // Si en seguimiento o en notas dice "YA SE ENTREGARON RESULTADOS", cuenta automáticamente para la sumatoria
+  if (checkEntrega(r.seguimiento) || checkEntrega(r.notas)) {
+    return true;
+  }
+
+  const checkOtros = (s) => {
     const t = (s || "").toUpperCase();
     return t.includes("COMPLET") ||
-           t.includes("EEUU") ||              // captura "ENVIO EEUU" y "ENVIADO EEUU"
-           t.includes("EN PROCESO DE RESULTADO") || t.includes("ENTREGARON RESULT") ||
-           t.includes("RESULTADOS ENVI");     // captura "RESULTADOS ENVIADOS", "RESULTADOS ENVIADO"
+           t.includes("EEUU") ||
+           t.includes("EN PROCESO DE RESULTADO") ||
+           t.includes("RESULTADOS ENVI");
   };
-  // col G (seguimiento/proceso) y col H (SEGUIMIENTO real con los estados)
-  const tieneEstado = checkStr(r.seguimiento) || checkStr(r.notas);
 
-  // Ambas condiciones deben cumplirse
-  return tieneEnvio && tieneEstado;
+  const tieneEnvio = r.fechaEnvio && r.fechaEnvio.trim() !== "" &&
+                     r.fechaEnvio.trim().toLowerCase() !== "pendiente";
+  const tieneOtroEstado = checkOtros(r.seguimiento) || checkOtros(r.notas);
+
+  return tieneEnvio && tieneOtroEstado;
 }
 
 // ── Detectar clase CSS de estado ──
 function classeEstado(texto) {
   if (!texto) return "";
   const t = texto.toLowerCase();
-  if (t.includes("complet") || t.includes("enviado eeuu") || t.includes("en espera de resultado") || t.includes("entregaron result"))
+  if (t.includes("complet") || t.includes("enviado eeuu") || t.includes("en espera de resultado") || t.includes("entregaron result") || t.includes("entrega de resultado") || t.includes("resultados entregado"))
     return "status-completo";
   if (t.includes("cancel") || t.includes("no contesta") || t.includes("rechaza") || t.includes("falleci"))
     return "status-cancelado";
@@ -1248,21 +1281,65 @@ function cruzarConNomad() {
 
 // recomputeAll ya fue extendido directamente en su declaración original
 
+function formatLocalISO(d) {
+  if (!d || isNaN(d.getTime())) return "";
+  const yStr = d.getFullYear();
+  const mStr = String(d.getMonth() + 1).padStart(2, '0');
+  const dStr = String(d.getDate()).padStart(2, '0');
+  return `${yStr}-${mStr}-${dStr}`;
+}
+
 function parseFechaSheetIso(fechaStr) {
   if (!fechaStr) return null;
-  let dateObj = new Date(fechaStr);
-  if (isNaN(dateObj.getTime())) {
-    if (fechaStr.includes("/")) {
-      const p = fechaStr.split("/");
-      if (p.length >= 3) {
-        dateObj = new Date(parseInt(p[2]), parseInt(p[1])-1, parseInt(p[0]));
+  const s = fechaStr.toString().trim();
+  if (s.toLowerCase() === "pendiente" || s.toLowerCase() === "sin fecha" || s === "—" || s === "-") return null;
+
+  // Formatos con barras: D/M/YYYY o M/D/YYYY
+  if (s.includes("/")) {
+    const p = s.split("/");
+    if (p.length >= 3) {
+      const v1 = parseInt(p[0], 10);
+      const v2 = parseInt(p[1], 10);
+      let y = parseInt(p[2], 10);
+      if (y < 100) y += 2000;
+
+      let day, month;
+      if (v2 > 12) {
+        // Segundo valor > 12 -> Formato M/D/YYYY (ej: 1/27/2025)
+        month = v1;
+        day = v2;
+      } else {
+        // Fechas de entrega y formato mexicano habitual: D/M/YYYY (ej: 4/11/2026, 16/10/2026)
+        day = v1;
+        month = v2;
       }
+      if (isNaN(day) || isNaN(month) || isNaN(y)) return null;
+      return `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     }
   }
-  if (!dateObj || isNaN(dateObj.getTime())) return null;
-  // Ajustar zona horaria a local
-  dateObj.setMinutes(dateObj.getMinutes() - dateObj.getTimezoneOffset());
-  return dateObj.toISOString().split("T")[0]; // YYYY-MM-DD
+
+  // Formatos con guiones: YYYY-MM-DD o DD-MM-YYYY
+  if (s.includes("-")) {
+    const p = s.split("-");
+    if (p.length >= 3) {
+      if (p[0].length === 4) {
+        return `${p[0]}-${p[1].padStart(2, '0')}-${p[2].padStart(2, '0')}`;
+      }
+      let v1 = parseInt(p[0], 10);
+      let v2 = parseInt(p[1], 10);
+      let y = parseInt(p[2], 10);
+      if (y < 100) y += 2000;
+      let day = v1, month = v2;
+      if (v2 > 12) { month = v1; day = v2; }
+      return `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return formatLocalISO(d);
+  }
+  return null;
 }
 
 // ── Filtros Romarico ──
@@ -1273,10 +1350,11 @@ function aplicarFiltrosRomarico() {
   const fin = filtroRomaricoFechaFin ? filtroRomaricoFechaFin.value : "";
   if (ini || fin) {
     filas = filas.filter(r => {
-      // Usar fechaEnvio primero; si no tiene, caer a fecha de solicitud
-      const dIso = parseFechaSheetIso(r.fechaEnvio || r.fecha);
-      if (!dIso) return true; // Si no hay fecha o es inválida, se deja pasar o se filtra. Asumimos dejar pasar o no? Mejor ocultar si no coincide. 
-      // Si piden fecha y no tiene, no lo mostramos a menos que no hayan puesto filtro.
+      // Regla: siempre emparejar la fecha con la fecha de cierre o entrega (col B: fechaEnvio) si existe,
+      // con fallback a fecha de solicitud (col A: fecha)
+      const fechaRef = obtenerFechaFilaRomarico(r);
+      const dIso = parseFechaSheetIso(fechaRef);
+      if (!dIso) return false;
       if (ini && dIso < ini) return false;
       if (fin && dIso > fin) return false;
       return true;
@@ -1316,29 +1394,21 @@ function parseMonto(montoStr) {
 
 function esDeEstaSemana(fechaStr) {
   if (!fechaStr) return false;
-  // Intentar parseo nativo. JS procesa m/d/yyyy ("5/26/2025") correctamente
-  let dateObj = new Date(fechaStr);
-  
-  if (isNaN(dateObj.getTime())) {
-    // Fallback manual por si acaso
-    if (fechaStr.includes("/")) {
-      const p = fechaStr.split("/");
-      if (p.length >= 3) {
-        dateObj = new Date(parseInt(p[2]), parseInt(p[1])-1, parseInt(p[0]));
-      }
-    }
-  }
-  
-  if (!dateObj || isNaN(dateObj.getTime())) return false;
-  
+  const iso = parseFechaSheetIso(fechaStr);
+  if (!iso) return false;
+  const p = iso.split("-");
+  const dateObj = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+
   const now = new Date();
-  // Obtener lunes de esta semana
   const day = now.getDay();
-  const diff = now.getDate() - day + (day === 0 ? -6: 1); // ajustar cuando es domingo
-  const lunes = new Date(now.setDate(diff));
-  lunes.setHours(0,0,0,0);
-  
-  return dateObj >= lunes;
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1); // lunes
+  const lunes = new Date(now.getFullYear(), now.getMonth(), diff, 0, 0, 0, 0);
+
+  const domingo = new Date(lunes);
+  domingo.setDate(domingo.getDate() + 6);
+  domingo.setHours(23, 59, 59, 999);
+
+  return dateObj >= lunes && dateObj <= domingo;
 }
 
 function actualizarKpisRomarico(filas) {
@@ -1351,13 +1421,14 @@ function actualizarKpisRomarico(filas) {
   let deEstaSemana = 0;
 
   filas.forEach(r => {
-    // "si dice completado (en seguimiento O en notas), es que ya se pagó"
+    // Si cumple la regla de completado o entrega de resultados, suma al monto
     if (esCompletadoRow(r)) {
       montoTotal += parseMonto(r.costoIva);
     }
 
-    // Contar cuántas se enviaron esta semana (usar fechaEnvio, fallback a fecha de solicitud)
-    if (esDeEstaSemana(r.fechaEnvio || r.fecha)) {
+    // Contar cuántas se cerraron/entregaron esta semana (emparejando con fecha de cierre/entrega)
+    const fechaRef = obtenerFechaFilaRomarico(r);
+    if (fechaRef && esDeEstaSemana(fechaRef)) {
       deEstaSemana++;
     }
   });
@@ -1429,26 +1500,14 @@ function actualizarGraficosRomarico(filas) {
     datasets: [{ label: "Conteo de Pruebas", data: Object.values(porPrueba), backgroundColor: "#f59e0b" }]
   }, { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true }}});
 
-  // Tendencia Mensual (Romarico) — se usa fechaEnvio para contabilizar en el mes correcto
+  // Tendencia Mensual (Romarico) — emparejar con fecha de cierre o entrega
   const porMes = {};
   filas.forEach(r => {
-    // Prioridad: FECHA DE ENVIO (col B). Fallback: FECHA DE SOLICITUD
-    const fechaRef = r.fechaEnvio || r.fecha;
+    const fechaRef = obtenerFechaFilaRomarico(r);
     let mes = "Sin fecha";
-    if (fechaRef && fechaRef.trim() && fechaRef.trim().toLowerCase() !== "pendiente") {
-      // Intentar extraer de "dd/mm/yyyy" o "yyyy-mm-dd"
-      if (fechaRef.includes("/")) {
-        const partes = fechaRef.split("/");
-        if (partes.length >= 3) {
-          // asumiendo dd/mm/yyyy
-          mes = partes[2] + "-" + partes[1].padStart(2, '0');
-        }
-      } else if (fechaRef.includes("-")) {
-        const partes = fechaRef.split("-");
-        if (partes.length >= 2) {
-          mes = partes[0] + "-" + partes[1].padStart(2, '0');
-        }
-      }
+    const iso = parseFechaSheetIso(fechaRef);
+    if (iso) {
+      mes = iso.substring(0, 7); // YYYY-MM
     }
     porMes[mes] = (porMes[mes] || 0) + 1;
   });
@@ -1590,8 +1649,8 @@ function limpiarFiltrosRomarico() {
   const hoy = new Date();
   const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
   const ultimoDia = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
-  if (filtroRomaricoFechaInicio) filtroRomaricoFechaInicio.value = primerDia.toISOString().split("T")[0];
-  if (filtroRomaricoFechaFin) filtroRomaricoFechaFin.value = ultimoDia.toISOString().split("T")[0];
+  if (filtroRomaricoFechaInicio) filtroRomaricoFechaInicio.value = formatLocalISO(primerDia);
+  if (filtroRomaricoFechaFin) filtroRomaricoFechaFin.value = formatLocalISO(ultimoDia);
   
   aplicarFiltrosRomarico();
 }
