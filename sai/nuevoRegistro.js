@@ -14,7 +14,7 @@ function limpiarFormularioNuevoRegistro() {
    "nrHoraIngreso", "nrHoraSalida", "nrViaAcceso", "nrTiempoInfusion",
    "nrCiclo", "nrNumeroCiclos", "nrPaciente",
    "nrDelegacion", "nrEdad",
-   "nrEstatusPaciente", "nrMedicos", "nrTipoTratamiento", "nrAseguradora", "nrHonorarioMedico",
+   "nrEstatusPaciente", "nrMedicos", "nrKam", "nrTipoTratamiento", "nrAseguradora", "nrHonorarioMedico",
    "nrSubtotal", "nrIva", "nrMontoServicio", "nrTratamiento", "nrDiagnostico", "nrNotas"].forEach(id => { $(id).value = ""; });
   $("nrSexo").value = "";
   $("nrPrimeraVez").value = "SUBSECUENTE";
@@ -70,6 +70,7 @@ hora_cita: $("nrHoraCita").value ? `${$("nrHoraCita").value} hrs` : null,
     sexo: $("nrSexo").value.trim() || null,
     estatus_paciente: $("nrEstatusPaciente").value.trim() || null,
     medicos: $("nrMedicos").value.trim() || null,
+    kam: $("nrKam").value.trim() || null,
     tipo_tratamiento: $("nrTipoTratamiento").value.trim() || null,
     aseguradora_pago_bolsillo: $("nrAseguradora").value.trim() || null,
     honorario_medico: $("nrHonorarioMedico").value.trim() || null,
