@@ -105,8 +105,28 @@ function renderExecutiveDashboard(rows) {
   const panel = document.getElementById("panelDashboardAdmin");
   if (!panel) return;
 
-  execUltimaData = rows || []; // todas las sedes (sin aplicar el filtro de sede)
+  const hoy = new Date();
+  const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`;
+  const desde = $("filtroFechaInicio")?.value || `${mesActual}-01`;
+  const hasta = $("filtroFechaFin")?.value ||
+    `${mesActual}-${String(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate()).padStart(2, "0")}`;
+  // El resumen aplica su propio límite de fechas, aunque otro componente
+  // vuelva a pasarle la lista completa de registros.
+  execUltimaData = (rows || []).filter(r => {
+    const fecha = String(r.fechaInfusion || "").slice(0, 10);
+    return fecha >= desde && fecha <= hasta;
+  });
   if (panel.classList.contains("hidden")) return; // solo se pinta si el perfil es admin
+  const periodo = $("execPeriodo");
+  if (periodo) {
+    const mesCompleto = desde.slice(0, 7) === hasta.slice(0, 7) &&
+      desde.endsWith("-01") &&
+      Number(hasta.slice(-2)) === new Date(Number(hasta.slice(0, 4)), Number(hasta.slice(5, 7)), 0).getDate();
+    periodo.textContent = mesCompleto
+      ? `· ${new Date(Number(desde.slice(0, 4)), Number(desde.slice(5, 7)) - 1, 1)
+        .toLocaleDateString("es-MX", { month: "long", year: "numeric" })}`
+      : `· ${desde} a ${hasta}`;
+  }
 
   // Filtro de sede seleccionado en la barra de filtros superior.
   // Afecta al ticket promedio/monto total, EXCEPTO: Sede líder y

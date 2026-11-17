@@ -320,6 +320,7 @@ html[data-theme="light"] .toast.error { border-color: rgba(220,38,38,.3); backgr
   flex-wrap: wrap; margin-bottom: 1.3rem; position: relative;
 }
 .exec-head h2 { margin: .3rem 0; font-size: clamp(1.2rem, 2vw, 1.55rem); }
+.exec-head h2 #execPeriodo { color: var(--muted); font-size: .7em; font-weight: 500; text-transform: capitalize; }
 .exec-head p { margin: 0; max-width: 620px; }
 
 .exec-kpis {

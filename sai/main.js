@@ -130,8 +130,8 @@ function applyFilters() {
   const desde = $("filtroFechaInicio").value;
   const hasta = $("filtroFechaFin").value;
 
-  if (desde) rows = rows.filter(r => (r.fechaInfusion || "") >= desde);
-  if (hasta) rows = rows.filter(r => (r.fechaInfusion || "") <= hasta);
+  if (desde) rows = rows.filter(r => String(r.fechaInfusion || "").slice(0, 10) >= desde);
+  if (hasta) rows = rows.filter(r => String(r.fechaInfusion || "").slice(0, 10) <= hasta);
 
   const text = $("filtroTexto").value.trim().toLowerCase();
 

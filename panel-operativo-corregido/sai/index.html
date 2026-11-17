@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Concentrado de facturacion. </title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=mes-actual-2" />
 </head>
 <body>
 
@@ -42,7 +42,7 @@
     <div class="exec-head">
       <div>
         <div class="eyebrow">Solo administración</div>
-        <h2>Dashboard ejecutivo · Monto del servicio</h2>
+        <h2>Dashboard ejecutivo · Monto del servicio <span id="execPeriodo"></span></h2>
         <p class="muted">Visión consolidada de facturación por sede y tabla dinámica interactiva del concentrado.</p>
       </div>
       <span id="execActualizado" class="muted">—</span>
@@ -522,8 +522,8 @@
 <script src="Excelimport.js"></script>
 <script src="nuevoRegistro.js"></script>
 <script src="auth.js"></script>
-<script src="main.js"></script>
-<script src="dashboard.js"></script>
+<script src="main.js?v=mes-actual-2"></script>
+<script src="dashboard.js?v=mes-actual-2"></script>
 <script src="categorias-cancer.js"></script>
 
 <datalist id="listaAseguradoras">
