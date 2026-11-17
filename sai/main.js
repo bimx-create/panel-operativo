@@ -89,10 +89,21 @@ function showToast(message, type = "success") {
 // ============================================================
 // 3) INIT DE FILTROS
 // ============================================================
+function seleccionarMesActual() {
+  const hoy = new Date();
+  const anio = hoy.getFullYear();
+  const mes = String(hoy.getMonth() + 1).padStart(2, "0");
+  const ultimoDia = new Date(anio, hoy.getMonth() + 1, 0).getDate();
+
+  $("filtroFechaInicio").value = `${anio}-${mes}-01`;
+  $("filtroFechaFin").value = `${anio}-${mes}-${String(ultimoDia).padStart(2, "0")}`;
+}
+
 function initFilters() {
   $("filtroSede").innerHTML = SEDES.map(
     s => `<option value="${s}">${s || "Todas"}</option>`
   ).join("");
+  seleccionarMesActual();
 }
 
 // ============================================================
@@ -398,8 +409,7 @@ function initEvents() {
 
   $("btnLimpiarFiltros").addEventListener("click", () => {
     $("filtroTexto").value = "";
-    $("filtroFechaInicio").value = "";
-    $("filtroFechaFin").value = "";
+    seleccionarMesActual();
     $("filtroSede").value = "";
     document.querySelectorAll(".filtro-marca")
       .forEach(cb => cb.checked = true);

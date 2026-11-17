@@ -145,20 +145,49 @@ function renderExecutiveDashboard(rows) {
   }
 
   // ---- Tendencia mensual (mes actual vs anterior) ----
-  const porMes = agruparSumaPorClave(rowsConMonto, r => claveMes(r.fechaInfusion));
+  const fechaInicio = $("filtroFechaInicio")?.value || "";
+  const fechaFin = $("filtroFechaFin")?.value || "";
+  const mesSeleccionado = fechaInicio.slice(0, 7);
+  const fechaUltimaDelMes = /^\d{4}-\d{2}$/.test(mesSeleccionado)
+    ? new Date(Number(mesSeleccionado.slice(0, 4)), Number(mesSeleccionado.slice(5, 7)), 0).getDate()
+    : 0;
+  const mesCompleto = fechaInicio === `${mesSeleccionado}-01` &&
+    fechaFin === `${mesSeleccionado}-${String(fechaUltimaDelMes).padStart(2, "0")}`;
+  let rowsTendencia = rowsConMonto;
+  if (mesCompleto) {
+    const marcas = Array.from(document.querySelectorAll(".filtro-marca"))
+      .filter(cb => cb.checked)
+      .map(cb => normalizarTexto(cb.value));
+    const texto = $("filtroTexto")?.value.trim().toLowerCase() || "";
+    rowsTendencia = allRows.filter(r =>
+      (r.montoServicio !== null && r.montoServicio !== undefined && r.montoServicio !== "") &&
+      (!sedeFiltro || normalizarTexto(r.sede) === normalizarTexto(sedeFiltro)) &&
+      (!marcas.length || marcas.includes(normalizarTexto(r.marca))) &&
+      (!texto || [r.folio, r.paciente, r.medicos, r.kam, r.diagnostico]
+        .join(" ").toLowerCase().includes(texto))
+    );
+  }
+  const porMes = agruparSumaPorClave(rowsTendencia, r => claveMes(r.fechaInfusion));
   const mesesOrdenados = Array.from(porMes.keys()).sort();
-  const valoresMes = mesesOrdenados.map(m => porMes.get(m));
+  const mesAnterior = mesCompleto
+    ? new Date(Number(mesSeleccionado.slice(0, 4)), Number(mesSeleccionado.slice(5, 7)) - 2, 1)
+    : null;
+  const claveMesAnterior = mesAnterior
+    ? `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth() + 1).padStart(2, "0")}`
+    : "";
 
   const cardCrecimiento = $("execCrecimiento");
   const detalleCrecimiento = $("execCrecimientoDetalle");
-  if (mesesOrdenados.length >= 2) {
-    const actual = valoresMes[valoresMes.length - 1];
-    const anterior = valoresMes[valoresMes.length - 2];
+  if ((mesCompleto && porMes.has(claveMesAnterior)) || (!mesCompleto && mesesOrdenados.length >= 2)) {
+    const mesActualComparado = mesCompleto ? mesSeleccionado : mesesOrdenados[mesesOrdenados.length - 1];
+    const mesPrevioComparado = mesCompleto ? claveMesAnterior : mesesOrdenados[mesesOrdenados.length - 2];
+    const actual = porMes.get(mesActualComparado) || 0;
+    const anterior = porMes.get(mesPrevioComparado) || 0;
     const cambio = anterior > 0 ? ((actual - anterior) / anterior) * 100 : (actual > 0 ? 100 : 0);
     const signo = cambio >= 0 ? "+" : "";
     cardCrecimiento.textContent = `${signo}${cambio.toFixed(1)}%`;
     cardCrecimiento.style.color = cambio >= 0 ? "#37d39a" : "#ff6b81";
-    detalleCrecimiento.textContent = `${nombreMes(mesesOrdenados[mesesOrdenados.length - 1])} vs ${nombreMes(mesesOrdenados[mesesOrdenados.length - 2])}`;
+    detalleCrecimiento.textContent = `${nombreMes(mesActualComparado)} vs ${nombreMes(mesPrevioComparado)}`;
   } else {
     cardCrecimiento.textContent = "—";
     cardCrecimiento.style.color = "";
