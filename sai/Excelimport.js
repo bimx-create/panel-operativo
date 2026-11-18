@@ -14,7 +14,6 @@ const MAPA_COLUMNAS_RAW = {
   "sexo": "sexo",
   "estatus de paciente": "estatus_paciente",
   "médicos": "medicos",
-  "kam": "kam",
   "tipo de tratamiento": "tipo_tratamiento",
   "aseguradora y/o pago de bolsillo": "aseguradora_pago_bolsillo",
   "honorario médico": "honorario_medico",
@@ -142,7 +141,6 @@ async function procesarArchivoExcel(file, marca, sede) {
       sexo: fila[indices.sexo] || null,
       estatus_paciente: fila[indices.estatus_paciente] || null,
       medicos: fila[indices.medicos] || null,
-      kam: fila[indices.kam] || null,
       tipo_tratamiento: fila[indices.tipo_tratamiento] || null,
       aseguradora_pago_bolsillo: fila[indices.aseguradora_pago_bolsillo] || null,
       honorario_medico: fila[indices.honorario_medico] === undefined || fila[indices.honorario_medico] === null || String(fila[indices.honorario_medico]).trim() === ""
@@ -190,17 +188,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const file = input.files[0];
     if (!file) return;
 
-    if (!currentUser || currentUser.role !== "admin") {
-      showToast("Solo el administrador puede importar archivos de Excel.", "error");
-      input.value = "";
-      return;
-    }
-
-    const marca = document.getElementById("importMarca")?.value || "SANARÉ";
-    const sede = document.getElementById("importSede")?.value || "";
+    const marca = "SANARÉ";
+    const sede = currentUser && currentUser.role === "sede" ? currentUser.sede : "";
 
     if (!sede) {
-      showToast("Selecciona la sede a la que corresponde el archivo antes de importarlo.", "error");
+      showToast("Solo los usuarios de sede pueden importar (el admin no tiene sede asignada).", "error");
       input.value = "";
       return;
     }
@@ -257,7 +249,6 @@ function exportarRegistrosAExcel() {
     "Sexo": r.sexo || "",
     "Estatus de Paciente": r.estatusPaciente || "",
     "Médicos": r.medicos || "",
-    "KAM": r.kam || "",
     "Tipo de tratamiento": r.tipoTratamiento || "",
     "Aseguradora y/o pago de bolsillo": r.aseguradora || "",
     "Honorario médico": r.honorarioMedico ?? "",

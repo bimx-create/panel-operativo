@@ -34,8 +34,6 @@ window.addEventListener("message", event => {
   }
 });
 
-
-
 function obtenerColoresTema() {
   const estilos = getComputedStyle(document.documentElement);
   const esClaro = document.documentElement.getAttribute("data-theme") === "light";
@@ -105,28 +103,8 @@ function renderExecutiveDashboard(rows) {
   const panel = document.getElementById("panelDashboardAdmin");
   if (!panel) return;
 
-  const hoy = new Date();
-  const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`;
-  const desde = $("filtroFechaInicio")?.value || `${mesActual}-01`;
-  const hasta = $("filtroFechaFin")?.value ||
-    `${mesActual}-${String(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate()).padStart(2, "0")}`;
-  // El resumen aplica su propio límite de fechas, aunque otro componente
-  // vuelva a pasarle la lista completa de registros.
-  execUltimaData = (rows || []).filter(r => {
-    const fecha = String(r.fechaInfusion || "").slice(0, 10);
-    return fecha >= desde && fecha <= hasta;
-  });
+  execUltimaData = rows || []; // todas las sedes (sin aplicar el filtro de sede)
   if (panel.classList.contains("hidden")) return; // solo se pinta si el perfil es admin
-  const periodo = $("execPeriodo");
-  if (periodo) {
-    const mesCompleto = desde.slice(0, 7) === hasta.slice(0, 7) &&
-      desde.endsWith("-01") &&
-      Number(hasta.slice(-2)) === new Date(Number(hasta.slice(0, 4)), Number(hasta.slice(5, 7)), 0).getDate();
-    periodo.textContent = mesCompleto
-      ? `· ${new Date(Number(desde.slice(0, 4)), Number(desde.slice(5, 7)) - 1, 1)
-        .toLocaleDateString("es-MX", { month: "long", year: "numeric" })}`
-      : `· ${desde} a ${hasta}`;
-  }
 
   // Filtro de sede seleccionado en la barra de filtros superior.
   // Afecta al ticket promedio/monto total, EXCEPTO: Sede líder y
@@ -164,55 +142,16 @@ function renderExecutiveDashboard(rows) {
     $("execSedeLiderMonto").textContent = "$0";
   }
 
-  // ---- Tendencia mensual (mes actual vs anterior) ----
-  const fechaInicio = $("filtroFechaInicio")?.value || "";
-  const fechaFin = $("filtroFechaFin")?.value || "";
-  const mesSeleccionado = fechaInicio.slice(0, 7);
-  const fechaUltimaDelMes = /^\d{4}-\d{2}$/.test(mesSeleccionado)
-    ? new Date(Number(mesSeleccionado.slice(0, 4)), Number(mesSeleccionado.slice(5, 7)), 0).getDate()
-    : 0;
-  const mesCompleto = fechaInicio === `${mesSeleccionado}-01` &&
-    fechaFin === `${mesSeleccionado}-${String(fechaUltimaDelMes).padStart(2, "0")}`;
-  let rowsTendencia = rowsConMonto;
-  if (mesCompleto) {
-    const marcas = Array.from(document.querySelectorAll(".filtro-marca"))
-      .filter(cb => cb.checked)
-      .map(cb => normalizarTexto(cb.value));
-    const texto = $("filtroTexto")?.value.trim().toLowerCase() || "";
-    rowsTendencia = allRows.filter(r =>
-      (r.montoServicio !== null && r.montoServicio !== undefined && r.montoServicio !== "") &&
-      (!sedeFiltro || normalizarTexto(r.sede) === normalizarTexto(sedeFiltro)) &&
-      (!marcas.length || marcas.includes(normalizarTexto(r.marca))) &&
-      (!texto || [r.folio, r.paciente, r.medicos, r.kam, r.diagnostico]
-        .join(" ").toLowerCase().includes(texto))
-    );
-  }
-  const porMes = agruparSumaPorClave(rowsTendencia, r => claveMes(r.fechaInfusion));
-  const mesesOrdenados = Array.from(porMes.keys()).sort();
-  const mesAnterior = mesCompleto
-    ? new Date(Number(mesSeleccionado.slice(0, 4)), Number(mesSeleccionado.slice(5, 7)) - 2, 1)
-    : null;
-  const claveMesAnterior = mesAnterior
-    ? `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth() + 1).padStart(2, "0")}`
-    : "";
-
-  const cardCrecimiento = $("execCrecimiento");
-  const detalleCrecimiento = $("execCrecimientoDetalle");
-  if ((mesCompleto && porMes.has(claveMesAnterior)) || (!mesCompleto && mesesOrdenados.length >= 2)) {
-    const mesActualComparado = mesCompleto ? mesSeleccionado : mesesOrdenados[mesesOrdenados.length - 1];
-    const mesPrevioComparado = mesCompleto ? claveMesAnterior : mesesOrdenados[mesesOrdenados.length - 2];
-    const actual = porMes.get(mesActualComparado) || 0;
-    const anterior = porMes.get(mesPrevioComparado) || 0;
-    const cambio = anterior > 0 ? ((actual - anterior) / anterior) * 100 : (actual > 0 ? 100 : 0);
-    const signo = cambio >= 0 ? "+" : "";
-    cardCrecimiento.textContent = `${signo}${cambio.toFixed(1)}%`;
-    cardCrecimiento.style.color = cambio >= 0 ? "#37d39a" : "#ff6b81";
-    detalleCrecimiento.textContent = `${nombreMes(mesActualComparado)} vs ${nombreMes(mesPrevioComparado)}`;
-  } else {
-    cardCrecimiento.textContent = "—";
-    cardCrecimiento.style.color = "";
-    detalleCrecimiento.textContent = "Sin datos suficientes";
-  }
+  // ---- Meta mensual ----
+  const meta = 4000000;
+  const pctAvance = montoTotal / meta * 100;
+  $("execMetaAvance").textContent = `${pctAvance.toFixed(1)}%`;
+  $("execMetaAvance").style.color = pctAvance >= 100 ? "#37d39a" : pctAvance >= 50 ? "#f59e0b" : "#38bdf8";
+  $("execMetaDetalle").textContent = montoTotal < meta
+    ? `Faltan ${formatearMoneda(meta - montoTotal)} para la meta`
+    : `¡Meta superada por ${formatearMoneda(montoTotal - meta)}!`;
+  $("execMetaBar").style.width = `${Math.min(100, pctAvance)}%`;
+  $("execMetaBar").style.background = $("execMetaAvance").style.color;
 
   // ---- Origen del pago: aseguradora vs pago de bolsillo ----
   const montoBolsillo = rowsConMonto
@@ -241,22 +180,10 @@ function renderExecutiveDashboard(rows) {
   // ---- Retención: pacientes nuevos vs recurrentes ----
   const nuevos = rowsConMonto.filter(r => esPacienteNuevo(r.primeraVez));
   const recurrentes = rowsConMonto.filter(r => !esPacienteNuevo(r.primeraVez));
-  const pctRecurrentes = rowsConMonto.length ? (recurrentes.length / rowsConMonto.length) * 100 : 0;
-  if ($("execRetencionPct")) {
-    if (rowsConMonto.length) {
-      const mayorEsRecurrente = recurrentes.length >= nuevos.length;
-      const pctMayor = mayorEsRecurrente ? pctRecurrentes : (100 - pctRecurrentes);
-      const pctMenor = mayorEsRecurrente ? (100 - pctRecurrentes) : pctRecurrentes;
-      const etiquetaMayor = mayorEsRecurrente ? "recurrentes" : "de primera vez";
-      const etiquetaMenor = mayorEsRecurrente ? "de primera vez" : "recurrentes";
-
-      $("execRetencionPct").textContent = `${pctMayor.toFixed(0)}% ${etiquetaMayor}`;
-      $("execRetencionDetalle").textContent = `${pctMenor.toFixed(0)}% ${etiquetaMenor}`;
-    } else {
-      $("execRetencionPct").textContent = "—";
-      $("execRetencionDetalle").textContent = "Sin datos suficientes";
-    }
-  }
+  $("execNuevosVol").textContent = String(nuevos.length);
+  $("execNuevosMonto").textContent = formatearMoneda(nuevos.reduce((a, r) => a + (Number(r.montoServicio) || 0), 0));
+  $("execRecurrentesVol").textContent = String(recurrentes.length);
+  $("execRecurrentesMonto").textContent = formatearMoneda(recurrentes.reduce((a, r) => a + (Number(r.montoServicio) || 0), 0));
 
   // ---- Ticket promedio por sede (siempre todas las sedes, para comparar) ----
   const conteoPorSede = new Map();
@@ -349,7 +276,6 @@ function homologarDiagnostico(valor) {
       [/\b(pulmon|pulmonar|bronco|bronquial)\b/, "CÁNCER DE PULMÓN"],
       [/\b(colon|colorrectal|colorectal|recto)\b/, "CÁNCER COLORRECTAL"],
       [/\b(prostata|prostatico|prostatica)\b/, "CÁNCER DE PRÓSTATA"],
-      [/\b(pene|peniano|peniana)\b/, "CÁNCER DE PENE"],
       [/\b(cervix|cervical|cervicouterino|cervico uterino|cuello uterino|cuello de utero)\b/, "CÁNCER CERVICOUTERINO"],
       [/\b(ovario|ovarico|ovarica)\b/, "CÁNCER DE OVARIO"],
       [/\b(utero|uterino|uterina|endometrio|endometrial)\b/, "CÁNCER DE ÚTERO"],
@@ -411,7 +337,7 @@ function apartadoFormatoNumero(valor, campo) {
 function distribucionCategorica(rows, key) {
   const mapa = new Map();
   rows.forEach(r => {
-    const val = key === "diagnostico" ? categoriaDiagnostico(r[key])
+    const val = key === "diagnostico" ? homologarDiagnostico(r[key])
       : key === "medicos" ? homologarMedico(r[key]) : apartadoValorCelda(r[key]);
     mapa.set(val, (mapa.get(val) || 0) + 1);
   });
@@ -436,7 +362,7 @@ function pacientesPorMedico(rows) {
 function montosPorDiagnostico(rows) {
   const mapa = new Map();
   rows.forEach(r => {
-    const grupo = categoriaDiagnostico(r.diagnostico);
+    const grupo = homologarDiagnostico(r.diagnostico);
     if (!mapa.has(grupo)) mapa.set(grupo, { montoTotal: 0, registrosConMonto: 0, pacientes: new Set() });
     const resumen = mapa.get(grupo);
     const paciente = clavePaciente(r.paciente);
@@ -507,11 +433,7 @@ function renderGridApartados(filtroTexto) {
             mini = hist.map((h, i) => `<span style="height:${Math.max(10, (h.count / maxCount) * 100)}%; background:${colores.paleta[i % colores.paleta.length]}"></span>`).join("");
           }
         } else {
-          const sedeFiltro = $("filtroSede") ? normalizarTexto($("filtroSede").value) : "";
-          const filasApartado = a.key === "diagnostico"
-            ? rows.filter(r => normalizarTexto(r.marca) === "sanare" &&
-                (!sedeFiltro || normalizarTexto(r.sede) === sedeFiltro)) : rows;
-          const dist = distribucionCategorica(filasApartado, a.key);
+          const dist = distribucionCategorica(rows, a.key);
           if (dist.length) {
             const total = dist.reduce((s, [, c]) => s + c, 0);
             const [topVal, topCount] = dist[0];
@@ -564,12 +486,7 @@ function renderDetalleApartado() {
   const campo = APARTADOS.find(a => a.key === apartadoActivo);
   if (!campo) return;
 
-  let rows = (execUltimaData || []).filter(r => r.paciente);
-  if (campo.key === "diagnostico") {
-    const sedeFiltro = $("filtroSede") ? normalizarTexto($("filtroSede").value) : "";
-    rows = rows.filter(r => normalizarTexto(r.marca) === "sanare" &&
-      (!sedeFiltro || normalizarTexto(r.sede) === sedeFiltro));
-  }
+  const rows = (execUltimaData || []).filter(r => r.paciente);
   const colores = obtenerColoresTema();
 
   let subtitulo = "";
@@ -617,7 +534,7 @@ function renderDetalleApartado() {
     const pacientesMedico = campo.key === "medicos" ? pacientesPorMedico(rows) : null;
     if (campo.key === "diagnostico" || campo.key === "medicos") {
       rows.forEach(r => {
-        const grupo = campo.key === "diagnostico" ? categoriaDiagnostico(r.diagnostico) : homologarMedico(r.medicos);
+        const grupo = campo.key === "diagnostico" ? homologarDiagnostico(r.diagnostico) : homologarMedico(r.medicos);
         if (!variantes.has(grupo)) variantes.set(grupo, new Map());
         const original = apartadoValorCelda(r[campo.key]);
         const mapa = variantes.get(grupo);
@@ -634,7 +551,7 @@ function renderDetalleApartado() {
     subtitulo = `${totalReg} registro(s) analizado(s) · ${dist.length} valor(es) distinto(s)${apartadoDetBuscarTexto ? " (filtrado)" : ""}`;
 
     const notaMontos = campo.key === "diagnostico"
-      ? `<p class="muted apartado-tabla-nota">Diagnósticos agrupados por tipo y zona anatómica. Pacientes únicos por categoría; el ticket promedio es monto total del servicio ÷ registros con monto.</p>`
+      ? `<p class="muted apartado-tabla-nota">Pacientes únicos por diagnóstico. El ticket promedio se calcula como monto total del servicio ÷ registros con monto.</p>`
       : "";
 
     if (!dist.length) {
@@ -654,7 +571,7 @@ function renderDetalleApartado() {
       bodyHtml = `${notaMontos}<p class="muted apartado-tabla-nota">Este apartado tiene muchos valores distintos: se muestra como tabla clasificada por frecuencia (usa el buscador para filtrar).</p>`;
     }
 
-    tablaHeadHtml = `<thead><tr><th>${campo.key === "diagnostico" ? "Categoría de diagnóstico" : escapeHtml(campo.label)}</th><th>Registros</th>${campo.key === "diagnostico" || campo.key === "medicos" ? "<th>Pacientes</th>" : ""}<th>%</th>${campo.key === "diagnostico" ? "<th>Con monto</th><th>Monto total del servicio</th><th>Ticket promedio</th>" : ""}</tr></thead>`;
+    tablaHeadHtml = `<thead><tr><th>${escapeHtml(campo.label)}</th><th>Registros</th>${campo.key === "diagnostico" || campo.key === "medicos" ? "<th>Pacientes</th>" : ""}<th>%</th>${campo.key === "diagnostico" ? "<th>Con monto</th><th>Monto total del servicio</th><th>Ticket promedio</th>" : ""}</tr></thead>`;
     tablaFilasHtml = dist.map(([val, count]) => {
       const resumen = montos && montos.get(val);
       const montoHtml = resumen
@@ -664,7 +581,6 @@ function renderDetalleApartado() {
         : pacientesMedico ? `<td>${(pacientesMedico.get(val) || new Set()).size}</td>` : "";
       return `<tr><td>${escapeHtml(val)}</td><td>${count}</td>${pacientesHtml}<td>${totalReg ? Math.round((count / totalReg) * 100) : 0}%</td>${montoHtml}</tr>`;
     }).join("");
-
   }
 
   cont.innerHTML = `
@@ -733,6 +649,7 @@ function initDashboardInteractivoEventos() {
 document.addEventListener("DOMContentLoaded", () => {
   initExecTabs();
   initDashboardInteractivoEventos();
+  if (window.parent !== window) window.parent.postMessage({ type: "SAI_READY" }, "*");
 });
 
 // Vuelve a pintar el dashboard interactivo con la paleta correcta al cambiar de tema
@@ -751,5 +668,3 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 window.renderExecutiveDashboard = renderExecutiveDashboard;
-
-

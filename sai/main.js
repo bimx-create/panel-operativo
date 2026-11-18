@@ -3,7 +3,6 @@
 // ============================================================
 const SEDES = ["", "Morelia", "Toluca", "Narvarte", "Tijuana", "Santa Fe"];
 let allRows = [];
-let filteredRows = [];
 
 function calcularTotal(subtotal, iva) {
   const sub = Number(subtotal) || 0;
@@ -130,14 +129,14 @@ function applyFilters() {
   const desde = $("filtroFechaInicio").value;
   const hasta = $("filtroFechaFin").value;
 
-  if (desde) rows = rows.filter(r => String(r.fechaInfusion || "").slice(0, 10) >= desde);
-  if (hasta) rows = rows.filter(r => String(r.fechaInfusion || "").slice(0, 10) <= hasta);
+  if (desde) rows = rows.filter(r => (r.fechaInfusion || "") >= desde);
+  if (hasta) rows = rows.filter(r => (r.fechaInfusion || "") <= hasta);
 
   const text = $("filtroTexto").value.trim().toLowerCase();
 
   if (text) {
     rows = rows.filter(r =>
-      [r.folio, r.paciente, r.medicos, r.kam, r.diagnostico]
+      [r.folio, r.paciente, r.medicos, r.diagnostico]
         .join(" ")
         .toLowerCase()
         .includes(text)
@@ -201,7 +200,6 @@ function renderTable(rows) {
       <td>${escapeHtml(row.sexo || "—")}</td>
       <td>${escapeHtml(row.estatusPaciente || "—")}</td>
       <td>${escapeHtml(row.medicos || "—")}</td>
-      <td>${escapeHtml(row.kam || "—")}</td>
       <td>${escapeHtml(row.tipoTratamiento || "—")}</td>
       <td>${escapeHtml(row.aseguradora || "—")}</td>
       <td class="money">${escapeHtml(formatearHonorarioMedico(row.honorarioMedico))}</td>
@@ -242,7 +240,7 @@ const CAMPOS_EDITABLES_DETALLE = [
   "edHoraIngreso", "edHoraSalida", "edViaAcceso", "edTiempoInfusion",
   "edCiclo", "edNumeroCiclos", "edPaciente",
   "edDelegacion", "edEdad", "edSexo",
-  "edEstatusPaciente", "edMedicos", "edKam", "edTipoTratamiento",
+  "edEstatusPaciente", "edMedicos", "edTipoTratamiento",
   "edAseguradora", "edHonorarioMedico",
   "edPrimeraVez", "edSubtotal", "edIva", "edMontoServicio",
   "edTratamiento", "edDiagnostico", "edNotas", "edSede"
@@ -280,7 +278,6 @@ function openDrawer(id) {
   $("edSexo").value = selectedRow.sexo || "";
   $("edEstatusPaciente").value = selectedRow.estatusPaciente || "";
   $("edMedicos").value = selectedRow.medicos || "";
-  $("edKam").value = selectedRow.kam || "";
   $("edTipoTratamiento").value = selectedRow.tipoTratamiento || "";
   $("edAseguradora").value = selectedRow.aseguradora || "";
   $("edHonorarioMedico").value = selectedRow.honorarioMedico ?? "";
@@ -344,7 +341,6 @@ async function saveDrawer() {
     sexo: $("edSexo").value.trim() || null,
     estatus_paciente: $("edEstatusPaciente").value.trim() || null,
     medicos: $("edMedicos").value.trim() || null,
-    kam: $("edKam").value.trim() || null,
     tipo_tratamiento: $("edTipoTratamiento").value.trim() || null,
     aseguradora_pago_bolsillo: $("edAseguradora").value.trim() || null,
     honorario_medico: $("edHonorarioMedico").value.trim() || null,
@@ -498,7 +494,6 @@ function mapRegistroSupabase(r) {
     sexo: r.sexo || "",
     estatusPaciente: r.estatus_paciente || "",
     medicos: r.medicos || "",
-    kam: r.kam || "",
     tipoTratamiento: r.tipo_tratamiento || "",
     aseguradora: r.aseguradora_pago_bolsillo || "",
     honorarioMedico: r.honorario_medico,
@@ -514,30 +509,19 @@ function mapRegistroSupabase(r) {
 
 async function cargarRegistros() {
   try {
-    // Supabase limita el tamaño de cada respuesta; reunir todas las páginas
-    // evita que los años antiguos desaparezcan del estadístico.
-    const data = [];
-    const pageSize = 1000;
-    for (let offset = 0; ; offset = data.length) {
-      const { data: page, error, count } = await supabaseClient
-        .from("cotizaciones")
-        .select("*", { count: "exact" })
-        .order("id", { ascending: true })
-        .range(offset, offset + pageSize - 1);
-      if (error) throw error;
-      data.push(...(page || []));
-      if (count === null || count === undefined) throw new Error("No se pudo comprobar el total de registros.");
-      if (data.length >= count) break;
-      if (!page || page.length === 0) throw new Error("No se pudieron cargar todos los registros.");
-    }
+    const { data, error } = await supabaseClient
+      .from("cotizaciones")
+      .select("*");
 
-    allRows = data
+    if (error) throw error;
+
+    allRows = (data || [])
       .map(mapRegistroSupabase)
       .sort((a, b) =>
         (b.fechaInfusion || "").localeCompare(a.fechaInfusion || "")
       );
 
-    publicarResumenSAI();
+    if (typeof publicarResumenSAI === "function") publicarResumenSAI();
     applyFilters();
 
     $("ultimaActualizacion").textContent =
@@ -618,5 +602,3 @@ function initDashboard() {
     });
   });
 })();
-
-
