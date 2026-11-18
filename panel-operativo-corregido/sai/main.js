@@ -200,6 +200,7 @@ function renderTable(rows) {
       <td>${escapeHtml(row.sexo || "—")}</td>
       <td>${escapeHtml(row.estatusPaciente || "—")}</td>
       <td>${escapeHtml(row.medicos || "—")}</td>
+      <td>${escapeHtml(row.kam || "—")}</td>
       <td>${escapeHtml(row.tipoTratamiento || "—")}</td>
       <td>${escapeHtml(row.aseguradora || "—")}</td>
       <td class="money">${escapeHtml(formatearHonorarioMedico(row.honorarioMedico))}</td>
@@ -494,6 +495,7 @@ function mapRegistroSupabase(r) {
     sexo: r.sexo || "",
     estatusPaciente: r.estatus_paciente || "",
     medicos: r.medicos || "",
+    kam: r.kam || "",
     tipoTratamiento: r.tipo_tratamiento || "",
     aseguradora: r.aseguradora_pago_bolsillo || "",
     honorarioMedico: r.honorario_medico,
