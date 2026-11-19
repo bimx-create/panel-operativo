@@ -121,6 +121,10 @@ function renderExecutiveDashboard(rows) {
     r => r.montoServicio !== null && r.montoServicio !== undefined && r.montoServicio !== ""
   );
 
+  if (typeof window.actualizarUtilidadSAI === "function") {
+    window.actualizarUtilidadSAI(rowsConMonto);
+  }
+
   if ($("execActualizado")) {
     $("execActualizado").textContent = `Actualizado: ${new Date().toLocaleString("es-MX")}`;
   }
