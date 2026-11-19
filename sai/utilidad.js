@@ -1,9 +1,10 @@
-// Resta costos de compra de las cotizaciones vinculadas a pacientes del SAI.
-// El catálogo puede tener varios precios por artículo; por eso es una estimación.
+// Calcula utilidad solo cuando cada registro tiene una cotización y costos identificables.
+// Una coincidencia por nombre de paciente no basta para repartir una cotización entre varios servicios.
 (() => {
   let cotizaciones = [];
-  let filas = [];
-  let recibidas = false;
+  let cotizacionesRecibidas = false;
+  let filasActuales = [];
+  let reporteUrl = null;
 
   const normalizar = value => String(value ?? "").toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -11,122 +12,167 @@
 
   function numero(value) {
     if (typeof value === "number") return Number.isFinite(value) ? value : NaN;
-    const cleaned = String(value ?? "").replace(/[$,\s]/g, "");
-    return cleaned ? Number(cleaned) : NaN;
+    const clean = String(value ?? "").replace(/[$,\s]/g, "");
+    return clean ? Number(clean) : NaN;
   }
 
-  function nombreItem(item) {
-    const base = item.innovador || item.patente || item.generico || item.bio || item;
+  function nombrePaciente(quote) {
+    return normalizar(quote.paciente || quote.PACIENTE || quote.nombrePaciente || quote.form?.paciente);
+  }
+
+  function nombreConcepto(item) {
+    const nested = item.bio || item.innovador || item.patente || item.generico || item.serv || {};
     return item.nombre || item.name || item.descripcion || item.concepto ||
-      item.ESQUEMA || item.esquema || item.pa || item.servicio ||
-      base.nombre || base.name || base.descripcion || base.PA || base["NOMBRE COMERCIAL"] || "";
+      nested.DESCRIPCION || nested.descripcion || nested.nombre || nested.name ||
+      nested["NOMBRE COMERCIAL"] || nested.PA || item.ESQUEMA || item.esquema ||
+      item.pa || item.servicio || "";
   }
 
   function conceptos(quote) {
-    const items = quote?.state?.items;
-    if (Array.isArray(items) && items.length) return items.map(item => ({
-      nombre: nombreItem(item), cantidad: numero(item.qty ?? item.cant ?? item.cantidad ?? 1)
+    let items = quote.state?.items;
+    if (!Array.isArray(items) || !items.length) {
+      items = [...(Array.isArray(quote.servicios) ? quote.servicios : []),
+        ...(Array.isArray(quote.medicamentos) ? quote.medicamentos : [])];
+    }
+    if (!items.length && Array.isArray(quote.items)) items = quote.items;
+    return items.map(item => ({
+      nombre: nombreConcepto(item),
+      cantidad: numero(item.qty ?? item.cantidad ?? item.cant ?? 1)
     }));
-    const separados = [...(Array.isArray(quote?.servicios) ? quote.servicios : []),
-      ...(Array.isArray(quote?.medicamentos) ? quote.medicamentos : [])];
-    if (separados.length) return separados.map(item => ({
-      nombre: nombreItem(item) || item.prueba || "",
-      cantidad: numero(item.cantidad ?? item.cant ?? 1)
-    }));
-    if (Array.isArray(quote?.items)) return quote.items.map(item => ({
-      nombre: nombreItem(item), cantidad: numero(item.cantidad ?? item.qty ?? item.cant ?? 1)
-    }));
-    return [];
   }
 
-  function catalogoCostos() {
-    const rows = window.COSTOS_DATA?.catalogo || [];
-    return rows.map(row => ({
-      nombre: normalizar(row.__EMPTY_1), costo: numero(row.__EMPTY_2)
+  function catalogo() {
+    return (window.COSTOS_DATA?.catalogo || []).map(row => ({
+      nombre: normalizar(row.__EMPTY_1),
+      costo: numero(row.__EMPTY_2)
     })).filter(row => row.nombre && Number.isFinite(row.costo) && row.costo > 0);
   }
 
-  function costoUnitario(nombre, catalogo) {
+  function buscarCosto(nombre, precios) {
     const key = normalizar(nombre);
-    if (key.length < 3) return null;
-    // Se conserva el primer costo del catálogo, como en el cálculo original.
-    const exacto = catalogo.find(row => row.nombre === key);
-    const parcial = exacto || catalogo.find(row => row.nombre.includes(key) || key.includes(row.nombre));
-    return parcial ? parcial.costo : null;
+    if (key.length < 3) return { motivo: "Concepto sin nombre" };
+    const exactos = precios.filter(row => row.nombre === key);
+    // Solo se permite un nombre más largo cuando hay una única presentación posible.
+    const posibles = exactos.length ? exactos : precios.filter(row => row.nombre.startsWith(key + " "));
+    const costos = [...new Set(posibles.map(row => row.costo))];
+    if (costos.length === 1) return { costo: costos[0] };
+    return { motivo: posibles.length ? `Precio o presentación ambigua: ${nombre}` : `Sin costo en catálogo: ${nombre}` };
   }
 
-  function cotizacionParaPaciente(nombre, lista) {
-    const key = normalizar(nombre);
-    if (!key) return null;
-    let matches = lista.filter(quote => normalizar(quote.paciente || quote.PACIENTE || quote.nombrePaciente || quote.form?.paciente) === key);
-    if (!matches.length) {
-      const tokens = key.split(" ").filter(token => token.length > 2);
-      if (tokens.length < 2) return null;
-      matches = lista.filter(quote => {
-        const quoteName = normalizar(quote.paciente || quote.PACIENTE || quote.nombrePaciente || quote.form?.paciente);
-        return quoteName && tokens.every(token => quoteName.split(" ").includes(token));
-      });
-      if (new Set(matches.map(quote => normalizar(quote.paciente || quote.PACIENTE || quote.nombrePaciente || quote.form?.paciente))).size !== 1) return null;
+  function calcular(rows, quotes, precios) {
+    const porPaciente = new Map();
+    for (const quote of quotes) {
+      const key = nombrePaciente(quote);
+      if (!key) continue;
+      if (!porPaciente.has(key)) porPaciente.set(key, []);
+      porPaciente.get(key).push(quote);
     }
-    return matches.find(quote => conceptos(quote).length > 0) || null;
-  }
+    const vecesPaciente = new Map();
+    for (const row of rows) {
+      const key = normalizar(row.paciente);
+      if (key) vecesPaciente.set(key, (vecesPaciente.get(key) || 0) + 1);
+    }
 
-  function calcular(rows, quotes, catalogo) {
+    const detalle = [];
     let utilidad = 0;
     let completos = 0;
-    let sinCotizacion = 0;
-    let sinCosto = 0;
     for (const row of rows) {
       const monto = numero(row.montoServicio);
-      if (!Number.isFinite(monto) || monto <= 0) continue;
-      const quote = cotizacionParaPaciente(row.paciente, quotes);
-      if (!quote) { sinCotizacion++; continue; }
-      const items = conceptos(quote);
-      if (!items.length) { sinCotizacion++; continue; }
-      let costoTotal = 0;
-      let completo = true;
-      for (const item of items) {
-        const costo = costoUnitario(item.nombre, catalogo);
-        if (costo === null || !Number.isFinite(item.cantidad) || item.cantidad <= 0) {
-          completo = false;
-          break;
+      const key = normalizar(row.paciente);
+      const base = { paciente: row.paciente || "", sede: row.sede || "", monto, costo: null, utilidad: null, estado: "", conceptos: "" };
+      const matches = porPaciente.get(key) || [];
+      if (!key || !Number.isFinite(monto) || monto <= 0) base.estado = "Sin paciente o monto válido";
+      else if (vecesPaciente.get(key) > 1) base.estado = "Paciente con varios servicios: falta vincular cotización por servicio";
+      else if (matches.length === 0) base.estado = "Sin cotización";
+      else if (matches.length > 1) base.estado = "Varias cotizaciones: falta identificar la de este servicio";
+      else {
+        const items = conceptos(matches[0]);
+        if (!items.length) base.estado = "Cotización sin conceptos detallados";
+        else {
+          let costo = 0;
+          const lineas = [];
+          for (const item of items) {
+            if (!Number.isFinite(item.cantidad) || item.cantidad <= 0) {
+              base.estado = `Cantidad inválida: ${item.nombre || "sin nombre"}`;
+              break;
+            }
+            const resultado = buscarCosto(item.nombre, precios);
+            if (!Number.isFinite(resultado.costo)) {
+              base.estado = resultado.motivo;
+              break;
+            }
+            costo += resultado.costo * item.cantidad;
+            lineas.push(`${item.nombre}: ${item.cantidad} × ${resultado.costo.toFixed(2)}`);
+          }
+          base.conceptos = lineas.join(" | ");
+          if (!base.estado) {
+            base.costo = costo;
+            base.utilidad = monto - costo;
+            base.estado = "Calculado";
+            utilidad += base.utilidad;
+            completos++;
+          }
         }
-        costoTotal += costo * item.cantidad;
       }
-      if (!completo) { sinCosto++; continue; }
-      utilidad += monto - costoTotal;
-      completos++;
+      detalle.push(base);
     }
-    return { utilidad, completos, sinCotizacion, sinCosto };
+    return { utilidad, completos, total: rows.length, detalle };
+  }
+
+  function exportar(resultado) {
+    const total = document.getElementById("execUtilidadTotal");
+    const card = total?.closest("article");
+    if (!card) return;
+    card.querySelector("#btnDescargarUtilidad")?.remove();
+    if (reporteUrl) URL.revokeObjectURL(reporteUrl);
+    const columnas = ["Paciente", "Sede", "Monto Servicio", "Costo Verificado", "Utilidad Verificada", "Estado", "Conceptos"];
+    const escapar = value => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const lines = [columnas, ...resultado.detalle.map(row => [
+      row.paciente, row.sede, Number.isFinite(row.monto) ? row.monto.toFixed(2) : "",
+      row.costo === null ? "" : row.costo.toFixed(2),
+      row.utilidad === null ? "" : row.utilidad.toFixed(2), row.estado, row.conceptos
+    ])].map(row => row.map(escapar).join(","));
+    reporteUrl = URL.createObjectURL(new Blob(["\uFEFF", lines.join("\r\n")], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.id = "btnDescargarUtilidad";
+    link.href = reporteUrl;
+    link.download = "Justificacion_Utilidad.csv";
+    link.textContent = "📥 Descargar reporte de cálculo";
+    link.style.cssText = "display:block;margin-top:8px;font-size:12px;color:#3b82f6;text-decoration:underline";
+    total.insertAdjacentElement("afterend", link);
   }
 
   function pintar() {
-    const totalEl = document.getElementById("execUtilidadTotal");
-    const detalleEl = document.getElementById("execUtilidadSedes");
-    if (!totalEl || !detalleEl) return;
-    if (!recibidas) {
-      totalEl.textContent = "—";
-      detalleEl.textContent = "Esperando cotizaciones...";
+    const total = document.getElementById("execUtilidadTotal");
+    const nota = document.getElementById("execUtilidadSedes");
+    if (!total || !nota) return;
+    if (!cotizacionesRecibidas) {
+      total.textContent = "—";
+      nota.textContent = "Esperando cotizaciones...";
       return;
     }
-    const resultado = calcular(filas, cotizaciones, catalogoCostos());
-    totalEl.textContent = resultado.completos ? formatearMoneda(resultado.utilidad) : "—";
-    totalEl.style.color = resultado.completos ? (resultado.utilidad >= 0 ? "#22c55e" : "#ef4444") : "";
-    detalleEl.textContent = `${resultado.completos} de ${filas.length} registros con costo completo` +
-      (resultado.sinCotizacion || resultado.sinCosto
-        ? ` · ${resultado.sinCotizacion} sin cotización · ${resultado.sinCosto} sin costo en catálogo` : "");
+    const resultado = calcular(filasActuales, cotizaciones, catalogo());
+    if (resultado.completos === resultado.total) {
+      total.textContent = formatearMoneda(resultado.utilidad);
+      total.style.color = resultado.utilidad < 0 ? "#ef4444" : "#22c55e";
+      nota.textContent = `${resultado.total} registros con costos verificados`;
+    } else {
+      total.textContent = "—";
+      total.style.color = "";
+      nota.textContent = `No calculable: ${resultado.total - resultado.completos} de ${resultado.total} registros sin costo verificable. Subtotal verificado: ${formatearMoneda(resultado.utilidad)}`;
+    }
+    exportar(resultado);
   }
 
-  window.actualizarUtilidadSAI = rows => {
-    filas = rows || [];
+  window.calcularUtilidadGlobal = rows => {
+    filasActuales = rows || [];
     pintar();
   };
   window.addEventListener("message", event => {
     if (event.source !== window.parent || event.data?.type !== "INNVIDA_COTIZACIONES") return;
     cotizaciones = Array.isArray(event.data.cotizaciones) ? event.data.cotizaciones : [];
-    recibidas = true;
+    cotizacionesRecibidas = true;
     pintar();
   });
-  // Expuesto solo para pruebas de la regla de cálculo.
-  window.calcularUtilidadSAI = calcular;
+  window.calcularUtilidadVerificada = calcular;
 })();
