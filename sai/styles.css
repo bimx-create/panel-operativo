@@ -505,6 +505,11 @@ html[data-theme="light"] .toast.error { border-color: rgba(220,38,38,.3); backgr
 
 .apartado-tabla-nota { margin: 0 0 .8rem; }
 .apartado-table-wrap { max-height: 380px; }
+.apartado-pacientes-titulo { margin: 1.25rem 0 .7rem; font-size: .95rem; }
+.apartado-pacientes-titulo span { margin-left: .4rem; color: var(--muted); font-size: .8rem; font-weight: 400; }
+.apartado-pacientes-wrap { max-height: 420px; }
+.apartado-pacientes-tabla { min-width: 650px; }
+.apartado-pacientes-tabla tbody td { text-align: left; }
 
 
 /* Tema claro para el dashboard ejecutivo */

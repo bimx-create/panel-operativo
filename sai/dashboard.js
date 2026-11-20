@@ -361,6 +361,28 @@ function pacientesPorMedico(rows) {
   return mapa;
 }
 
+function filasDelApartado(campo, soloValoresVisibles = false) {
+  const rows = (execUltimaData || []).filter(r => r.paciente);
+  if (!soloValoresVisibles || campo.tipo === "numerica" || !apartadoDetBuscarTexto) return rows;
+
+  const q = normalizarTexto(apartadoDetBuscarTexto);
+  return rows.filter(r => {
+    const grupo = campo.key === "diagnostico" ? homologarDiagnostico(r.diagnostico)
+      : campo.key === "medicos" ? homologarMedico(r.medicos) : apartadoValorCelda(r[campo.key]);
+    return normalizarTexto(grupo).includes(q) ||
+      ((campo.key === "diagnostico" || campo.key === "medicos") &&
+        normalizarTexto(apartadoValorCelda(r[campo.key])).includes(q));
+  });
+}
+
+function datosPacientesApartado(campo) {
+  return filasDelApartado(campo, true).map(r => {
+    const valor = campo.key === "diagnostico" ? homologarDiagnostico(r.diagnostico)
+      : campo.key === "medicos" ? homologarMedico(r.medicos) : apartadoValorCelda(r[campo.key]);
+    return [valor, r.paciente || "", r.tratamiento || "", r.medicos || ""];
+  });
+}
+
 function montosPorDiagnostico(rows) {
   const mapa = new Map();
   rows.forEach(r => {
@@ -488,7 +510,7 @@ function renderDetalleApartado() {
   const campo = APARTADOS.find(a => a.key === apartadoActivo);
   if (!campo) return;
 
-  const rows = (execUltimaData || []).filter(r => r.paciente);
+  const rows = filasDelApartado(campo);
   const colores = obtenerColoresTema();
 
   let subtitulo = "";
@@ -585,6 +607,10 @@ function renderDetalleApartado() {
     }).join("");
   }
 
+  const detalles = datosPacientesApartado(campo);
+  const filasPacientesHtml = detalles.map(([valor, paciente, tratamiento, medicos]) => `
+    <tr><td>${escapeHtml(valor)}</td><td>${escapeHtml(paciente)}</td><td>${escapeHtml(tratamiento || "Sin dato")}</td><td>${escapeHtml(medicos || "Sin dato")}</td></tr>`).join("");
+
   cont.innerHTML = `
     <div class="apartado-detalle-head">
       <div>
@@ -601,6 +627,13 @@ function renderDetalleApartado() {
       ${bodyHtml}
       <div class="pivot-table-wrap apartado-table-wrap">
         <table class="pivot-table" id="apartadoTabla">${tablaHeadHtml}<tbody>${tablaFilasHtml}</tbody></table>
+      </div>
+      <h4 class="apartado-pacientes-titulo">Detalle por paciente <span>${detalles.length} registro(s)</span></h4>
+      <div class="pivot-table-wrap apartado-pacientes-wrap">
+        <table class="pivot-table apartado-pacientes-tabla">
+          <thead><tr><th>${escapeHtml(campo.label)}</th><th>Paciente</th><th>Tratamiento</th><th>Médicos encargados</th></tr></thead>
+          <tbody>${filasPacientesHtml || '<tr><td colspan="4">Sin pacientes para este filtro.</td></tr>'}</tbody>
+        </table>
       </div>
     </div>`;
 
@@ -634,7 +667,13 @@ function exportarApartadoAExcel(campo) {
   }
   const hoja = XLSX.utils.table_to_sheet(tabla);
   const libro = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(libro, hoja, campo.label.slice(0, 28));
+  XLSX.utils.book_append_sheet(libro, hoja, "Resumen");
+  const hojaPacientes = XLSX.utils.aoa_to_sheet([
+    [campo.label, "Paciente", "Tratamiento", "Médico encargado"],
+    ...datosPacientesApartado(campo)
+  ]);
+  hojaPacientes["!cols"] = [{ wch: 30 }, { wch: 36 }, { wch: 36 }, { wch: 36 }];
+  XLSX.utils.book_append_sheet(libro, hojaPacientes, "Pacientes");
   const fechaHoy = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(libro, `desglose_${campo.key}_${fechaHoy}.xlsx`);
   showToast("Desglose exportado.", "success");
